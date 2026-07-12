@@ -7,6 +7,9 @@
     <meta name="description" content="Feed do Crypto Bros — mercado, estudos e trade cripto." />
     <link rel="icon" type="image/png" href="./favicon.png" />
     <link rel="apple-touch-icon" href="./icon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -36,6 +39,12 @@
 
     <!-- Feed -->
     <main id="app" class="hidden">
+      <div id="ios-banner" class="ios-banner hidden">
+        <img src="./icon.png" alt="" class="ios-banner__icon" />
+        <div class="ios-banner__text"><strong>Crypto Bros</strong><span id="ios-banner-sub"></span></div>
+        <a id="ios-banner-cta" class="ios-banner__cta" href="#" target="_blank" rel="noopener"></a>
+        <button id="ios-banner-close" class="ios-banner__close" aria-label="Fechar">✕</button>
+      </div>
       <header class="topbar">
         <span class="topbar__brand"><img src="./icon.png" alt="" /><span id="brand-title">Feed</span></span>
         <div class="user">
@@ -63,6 +72,7 @@
                 <button data-theme-pref="dark"></button>
               </div>
             </div>
+            <button class="menu__notif" id="menu-notif"></button>
             <button class="menu__logout" id="menu-logout"></button>
           </div>
         </div>

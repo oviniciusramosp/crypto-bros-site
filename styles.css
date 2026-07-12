@@ -148,6 +148,13 @@ body {
 
 /* GIS button wrapper — kill the light placeholder frame so it fits dark theme */
 #google-btn > div { background: transparent !important; box-shadow: none !important; }
+.menu__notif {
+  border: none; background: var(--bg-tertiary); color: var(--text); padding: 10px; border-radius: 10px;
+  font-family: var(--font); font-size: 14px; font-weight: 600; cursor: pointer; text-align: center;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.menu__notif:disabled { color: var(--text-tertiary); cursor: default; }
+.menu__notif.on { color: var(--success); }
 .menu__logout {
   border: none; background: var(--bg-tertiary); color: var(--error); padding: 10px; border-radius: 10px;
   font-family: var(--font); font-size: 14px; font-weight: 600; cursor: pointer; text-align: center;
@@ -255,6 +262,18 @@ body {
 .nb-column { flex: 1; min-width: 0; }
 @media (max-width: 520px) { .nb-columns { flex-direction: column; gap: 0; } }
 .nb-eq { font-style: italic; }
+
+/* iOS App Store banner */
+.ios-banner {
+  display: flex; align-items: center; gap: 10px; padding: 8px var(--pad-screen);
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.ios-banner__icon { width: 40px; height: 40px; border-radius: 9px; flex: 0 0 auto; }
+.ios-banner__text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ios-banner__text strong { font-size: 14px; }
+.ios-banner__text span { font-size: 12px; color: var(--text-secondary); }
+.ios-banner__cta { flex: 0 0 auto; background: var(--accent); color: #fff; font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: var(--radius-pill); text-decoration: none; }
+.ios-banner__close { flex: 0 0 auto; border: none; background: none; color: var(--text-tertiary); font-size: 15px; cursor: pointer; padding: 4px; }
 
 /* ── Feed layout ────────────────────────────────────────────────────── */
 .feed { max-width: 640px; margin: 0 auto; padding-bottom: var(--pad-screen); }

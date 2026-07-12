@@ -4,6 +4,10 @@
 const CONFIG = {
   workerBase: 'https://crypto-bros-notion-proxy.crypto-bros.workers.dev',
   googleClientId: '947303618125-0k85q1ds1g8gfq3njtgsh1nc8ihug94p.apps.googleusercontent.com',
+  // TODO: replace with the real App Store URL once the app is published.
+  appStoreUrl: 'https://apps.apple.com/app/crypto-bros/id0000000000',
+  // VAPID public key for Web Push (matches the Worker's VAPID_PRIVATE_JWK secret).
+  vapidPublicKey: 'BNs6wLSOtdOlNEdTf20Ci5TUjfYMGCNAJ_3NvRhl0orN64eCjRWDabUcwpRHLN8jsfauqKDWbxiek6DiM8yIHDg',
 };
 
 const SESSION_KEY = 'cb-session';
@@ -186,6 +190,7 @@ function renderMenuState() {
   tp('light').innerHTML = THEME_ICONS.light + `<span>${I18N.t('appearance.light')}</span>`;
   tp('dark').innerHTML = THEME_ICONS.dark + `<span>${I18N.t('appearance.dark')}</span>`;
   $('menu-logout').textContent = I18N.t('menu.logout');
+  updateNotifButton();
 }
 
 // ── Views ─────────────────────────────────────────────────────────────
@@ -205,6 +210,8 @@ function showApp() {
   loadMarket();
   if (isPreview()) { loadPreviewFeed(); } else { loadFeed(); }
   checkDeepLink();
+  maybeShowIosBanner();
+  updateNotifButton();
 }
 
 // ── Price marquee (CoinGecko) ─────────────────────────────────────────
@@ -771,6 +778,68 @@ function loadPreviewFeed() {
   renderFeed();
 }
 
+// ── iOS App Store banner ──────────────────────────────────────────────
+function isIOS() { return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream; }
+function isStandalone() {
+  return navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+}
+function maybeShowIosBanner() {
+  if (!isIOS() || isStandalone() || localStorage.getItem('cb-banner-dismissed')) return;
+  $('ios-banner-sub').textContent = I18N.t('banner.install');
+  const cta = $('ios-banner-cta');
+  cta.textContent = I18N.t('banner.cta');
+  cta.href = CONFIG.appStoreUrl;
+  $('ios-banner').classList.remove('hidden');
+}
+
+// ── Web push ──────────────────────────────────────────────────────────
+function pushSupported() {
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+function urlB64ToUint8(base64) {
+  const pad = '='.repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(b64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+async function updateNotifButton() {
+  const btn = $('menu-notif');
+  if (!btn) return;
+  if (!pushSupported()) { btn.classList.add('hidden'); return; }
+  btn.classList.remove('hidden');
+  if (Notification.permission === 'denied') {
+    btn.textContent = I18N.t('notif.blocked'); btn.disabled = true; btn.classList.remove('on'); return;
+  }
+  btn.disabled = false;
+  let subscribed = false;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) subscribed = !!(await reg.pushManager.getSubscription());
+  } catch (e) {}
+  btn.textContent = '🔔 ' + I18N.t(subscribed ? 'notif.enabled' : 'notif.enable');
+  btn.classList.toggle('on', subscribed);
+}
+async function enableNotifications() {
+  if (!pushSupported() || $('menu-notif').disabled) return;
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+    try { const c = await caches.open('cb-cfg'); await c.put('cb-lang', new Response(I18N.lang)); } catch (e) {}
+    if (await reg.pushManager.getSubscription()) { toast(I18N.t('notif.enabled')); return updateNotifButton(); }
+    if ((await Notification.requestPermission()) !== 'granted') return updateNotifButton();
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true, applicationServerKey: urlB64ToUint8(CONFIG.vapidPublicKey),
+    });
+    await fetch(`${CONFIG.workerBase}/web/push/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getSession()}` },
+      body: JSON.stringify({ subscription: sub, lang: I18N.notionLang }),
+    });
+    toast(I18N.t('notif.enabled'));
+  } catch (e) { /* permission denied / unsupported */ }
+  updateNotifButton();
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────
 applyTheme();
 $('user-btn').addEventListener('click', (e) => { e.stopPropagation(); $('user-menu').classList.toggle('hidden'); });
@@ -782,6 +851,11 @@ document.querySelectorAll('#menu-lang button').forEach((b) =>
 document.querySelectorAll('#menu-theme button').forEach((b) =>
   b.addEventListener('click', () => setThemePref(b.dataset.themePref)));
 $('menu-logout').addEventListener('click', signOut);
+$('menu-notif').addEventListener('click', enableNotifications);
+$('ios-banner-close').addEventListener('click', () => {
+  $('ios-banner').classList.add('hidden');
+  localStorage.setItem('cb-banner-dismissed', '1');
+});
 $('modal-close').addEventListener('click', () => closeModal());
 $('modal-backdrop').addEventListener('click', () => closeModal());
 $('modal-share').addEventListener('click', shareCurrentPost);
