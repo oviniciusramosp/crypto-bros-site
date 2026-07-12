@@ -345,14 +345,29 @@ const NOTION_TAG_HEX = {
   default: '#F15B24', gray: '#9B9B9B', brown: '#BA856F', orange: '#FFA344', yellow: '#FFDC49',
   green: '#6DB87E', blue: '#529CCA', purple: '#A475C2', pink: '#E255A1', red: '#FF7369',
 };
+// Category tag labels hardcoded per language (keyed by the PT Notion value, like the app's feed.json).
+const TAG_LABELS = {
+  'Notícias': { pt: 'Notícias', en: 'News' },
+  'Análises': { pt: 'Análises', en: 'Analysis' },
+  'Trade': { pt: 'Trade', en: 'Trade' },
+  'Bitcoin': { pt: 'Bitcoin', en: 'Bitcoin' },
+  'Altcoins': { pt: 'Altcoins', en: 'Altcoins' },
+  'Educação': { pt: 'Educação', en: 'Education' },
+  'DeFi': { pt: 'DeFi', en: 'DeFi' },
+  'NFT': { pt: 'NFT', en: 'NFT' },
+};
+function tagLabel(name) { const m = TAG_LABELS[name]; return m ? m[I18N.lang] || m.pt : name; }
+// Ionicons "apps" grid — used on the All/Tudo pill (app parity).
+const APPS_ICON = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>';
 function renderTags() {
   const bar = $('tagbar');
   const dark = document.documentElement.getAttribute('data-theme') !== 'light';
-  const pills = [{ name: 'all', label: I18N.t('filters.all'), color: 'default' }]
-    .concat(feedTags.map((t) => ({ name: t.name, label: t.name, color: t.color })));
+  const pills = [{ name: 'all', label: I18N.t('filters.all'), color: 'default', icon: APPS_ICON }]
+    .concat(feedTags.map((t) => ({ name: t.name, label: tagLabel(t.name), color: t.color })));
   bar.replaceChildren();
   pills.forEach((p) => {
-    const btn = el('button', 'tag-pill', p.label);
+    const btn = el('button', 'tag-pill');
+    btn.innerHTML = (p.icon || '') + `<span>${escapeHtml(p.label)}</span>`;
     if (selectedTag === p.name) {
       btn.classList.add('selected');
       const hex = NOTION_TAG_HEX[p.color] || NOTION_TAG_HEX.default;
@@ -497,7 +512,7 @@ function avatarNode(author) {
   return el('div', 'avatar avatar--ph', name.charAt(0).toUpperCase());
 }
 function titleHtml(post) {
-  let html = post.icon ? `<span class="emoji">${escapeHtml(post.icon)}</span>` : '';
+  let html = ''; // page icons are not shown to the left of the title (app parity)
   const parts = (post.title || '').split(/(\[[^\]]+\])/);
   for (const part of parts) {
     const m = part.match(/^\[([^\]]+)\]$/);
@@ -579,7 +594,9 @@ function renderHistory() {
   rows.forEach((p) => {
     const row = el('button', 'history__row');
     const icon = el('div', 'history__icon');
-    if (p.icon) icon.textContent = p.icon; else icon.innerHTML = docIconSvg();
+    if (p.icon && p.icon.emoji) icon.textContent = p.icon.emoji;
+    else if (p.icon && p.icon.url) { const im = el('img'); im.src = p.icon.url; im.alt = ''; im.loading = 'lazy'; icon.appendChild(im); }
+    else icon.innerHTML = docIconSvg();
     const main = el('div', 'history__main');
     main.appendChild(el('div', 'history__title', p.title || '—'));
     main.appendChild(el('div', 'history__date', I18N.formatDate(p.publishedAt)));
@@ -770,7 +787,8 @@ function loadPreviewFeed() {
   ];
   feedHistory = Array.from({ length: 8 }, (_, i) => ({
     id: 'h' + i, title: `Post do histórico #${i + 1} — análise de mercado`,
-    icon: ['📰', '📉', '🧠', '🪙', '⚡'][i % 5],
+    // index 0 uses an image (custom-emoji/file style); the rest use standard emojis
+    icon: i === 0 ? { url: './icon.png' } : { emoji: ['📰', '📉', '🧠', '🪙', '⚡'][i % 5] },
     publishedAt: new Date(Date.now() - (i + 2) * 86400000).toISOString(),
   }));
   selectedTag = 'all';
