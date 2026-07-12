@@ -167,6 +167,12 @@ function renderMenuUser() {
 }
 
 // ── Popover menu ──────────────────────────────────────────────────────
+const THEME_ICONS = {
+  system: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/></svg>',
+  light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  dark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>',
+};
+function closeMenu() { $('user-menu').classList.add('hidden'); }
 function renderMenuState() {
   document.querySelectorAll('#menu-lang button').forEach((b) =>
     b.classList.toggle('active', b.dataset.lang === I18N.lang));
@@ -176,9 +182,9 @@ function renderMenuState() {
   $('menu-lang-label').textContent = I18N.t('menu.language');
   $('menu-theme-label').textContent = I18N.t('menu.appearance');
   const tp = (k) => document.querySelector(`#menu-theme [data-theme-pref="${k}"]`);
-  tp('system').textContent = I18N.t('appearance.system');
-  tp('light').textContent = I18N.t('appearance.light');
-  tp('dark').textContent = I18N.t('appearance.dark');
+  tp('system').innerHTML = THEME_ICONS.system + `<span>${I18N.t('appearance.system')}</span>`;
+  tp('light').innerHTML = THEME_ICONS.light + `<span>${I18N.t('appearance.light')}</span>`;
+  tp('dark').innerHTML = THEME_ICONS.dark + `<span>${I18N.t('appearance.dark')}</span>`;
   $('menu-logout').textContent = I18N.t('menu.logout');
 }
 
@@ -198,6 +204,7 @@ function showApp() {
   startMarquee();
   loadMarket();
   if (isPreview()) { loadPreviewFeed(); } else { loadFeed(); }
+  checkDeepLink();
 }
 
 // ── Price marquee (CoinGecko) ─────────────────────────────────────────
@@ -627,8 +634,35 @@ async function loadFeed() {
 }
 
 // ── Post detail modal ─────────────────────────────────────────────────
+let currentPostId = null;
 function openModal() { $('modal').classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
-function closeModal() { $('modal').classList.add('hidden'); document.body.style.overflow = ''; }
+function closeModal(fromPop) {
+  $('modal').classList.add('hidden');
+  document.body.style.overflow = '';
+  currentPostId = null;
+  if (!fromPop && new URLSearchParams(location.search).has('post')) {
+    history.pushState({}, '', location.pathname);
+  }
+}
+function toast(msg) {
+  const t = el('div', 'toast', msg);
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 2000);
+}
+async function shareCurrentPost() {
+  if (!currentPostId) return;
+  const url = `${location.origin}/?post=${encodeURIComponent(currentPostId)}`;
+  try {
+    if (navigator.share) { await navigator.share({ url }); return; }
+  } catch (e) { return; } // user cancelled native share
+  try { await navigator.clipboard.writeText(url); toast(I18N.t('share.copied')); } catch (e) {}
+}
+/** Open the post named in ?post= on load / after login. */
+function checkDeepLink() {
+  const id = new URLSearchParams(location.search).get('post');
+  if (id) openPost(id, true);
+}
 function renderPostModal(post) {
   const c = $('modal-content');
   c.replaceChildren();
@@ -648,7 +682,9 @@ function renderPostModal(post) {
   c.appendChild(body);
   c.scrollTop = 0;
 }
-async function openPost(id) {
+async function openPost(id, fromPop) {
+  currentPostId = id;
+  if (!fromPop) history.pushState({ post: id }, '', `?post=${encodeURIComponent(id)}`);
   openModal();
   $('modal-content').innerHTML = `<div class="modal__state">…</div>`;
   if (isPreview()) {
@@ -746,8 +782,13 @@ document.querySelectorAll('#menu-lang button').forEach((b) =>
 document.querySelectorAll('#menu-theme button').forEach((b) =>
   b.addEventListener('click', () => setThemePref(b.dataset.themePref)));
 $('menu-logout').addEventListener('click', signOut);
-$('modal-close').addEventListener('click', closeModal);
-$('modal-backdrop').addEventListener('click', closeModal);
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+$('modal-close').addEventListener('click', () => closeModal());
+$('modal-backdrop').addEventListener('click', () => closeModal());
+$('modal-share').addEventListener('click', shareCurrentPost);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeMenu(); } });
+window.addEventListener('popstate', () => {
+  const id = new URLSearchParams(location.search).get('post');
+  if (id) openPost(id, true); else closeModal(true);
+});
 
 if (getSession() || isPreview()) { showApp(); } else { showLogin(); }

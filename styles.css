@@ -129,7 +129,7 @@ body {
 .menu__user-name { font-size: 14px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu__user-email { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu {
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; width: 240px;
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; width: 300px; max-width: calc(100vw - 24px);
   background: var(--surface); border: 1px solid var(--inner-border); border-radius: 14px;
   box-shadow: 0 16px 48px rgba(0,0,0,0.35); padding: 12px; display: flex; flex-direction: column; gap: 12px;
 }
@@ -139,10 +139,15 @@ body {
 .menu__seg { display: flex; flex-direction: row; gap: 2px; padding: 3px; background: var(--seg-track); border-radius: var(--radius-pill); }
 .menu__seg button {
   flex: 1; border: none; background: none; cursor: pointer; font-family: var(--font);
-  padding: 6px 12px; border-radius: var(--radius-pill);
+  padding: 6px 10px; border-radius: var(--radius-pill); white-space: nowrap;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
   font-size: 13px; font-weight: 500; color: var(--text-secondary); transition: background 0.2s, color 0.2s;
 }
+.menu__seg button svg { width: 13px; height: 13px; flex: 0 0 auto; }
 .menu__seg button.active { background: var(--seg-active); color: var(--seg-active-text); font-weight: 600; }
+
+/* GIS button wrapper — kill the light placeholder frame so it fits dark theme */
+#google-btn > div { background: transparent !important; box-shadow: none !important; }
 .menu__logout {
   border: none; background: var(--bg-tertiary); color: var(--error); padding: 10px; border-radius: 10px;
   font-family: var(--font); font-size: 14px; font-weight: 600; cursor: pointer; text-align: center;
@@ -191,7 +196,20 @@ body {
   position: absolute; top: 16px; left: 16px; z-index: 2; width: 36px; height: 36px; border-radius: var(--radius-pill);
   border: none; background: rgba(0,0,0,0.5); color: #fff; font-size: 15px; cursor: pointer; backdrop-filter: blur(8px);
 }
-.modal__scroll { overflow-y: auto; flex: 1; }
+.modal__share {
+  position: absolute; top: 16px; right: 16px; z-index: 2; width: 36px; height: 36px; border-radius: var(--radius-pill);
+  border: none; background: rgba(0,0,0,0.5); color: #fff; cursor: pointer; backdrop-filter: blur(8px);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.modal__scroll { overflow-y: auto; flex: 1; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translate(-50%, 12px); z-index: 200;
+  background: var(--text); color: var(--bg); font-size: 13px; font-weight: 600;
+  padding: 10px 18px; border-radius: var(--radius-pill); box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  opacity: 0; transition: opacity 0.25s, transform 0.25s; pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
 .modal__cover { width: 100%; aspect-ratio: 14 / 9; object-fit: cover; background: var(--bg-tertiary); display: block; }
 .modal__body { padding: 20px; }
 .modal__title { font-size: 24px; line-height: 30px; font-weight: 700; margin-top: 10px; }
