@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Crypto Bros</title>
+    <meta name="description" content="Feed do Crypto Bros — mercado, estudos e trade cripto." />
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="apple-touch-icon" href="./icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script>
+      // Paint the saved (or OS) theme before first paint to avoid a flash.
+      (function () {
+        try {
+          var m = localStorage.getItem('cb-theme');
+          if (m !== 'light' && m !== 'dark') {
+            m = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+          }
+          document.documentElement.setAttribute('data-theme', m);
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <!-- Login (shown when signed out) -->
+    <section id="login" class="login hidden">
+      <img class="login__logo" src="./icon.png" alt="Crypto Bros" />
+      <h1 class="login__title">Crypto Bros</h1>
+      <p class="login__subtitle">Entre para acessar o feed.</p>
+      <div id="google-btn"></div>
+      <p class="login__hint">Primeiro acesso? Sua conta é criada automaticamente ao entrar com o Google.</p>
+      <p id="login-error" class="login__error hidden"></p>
+    </section>
+
+    <!-- Feed (shown when signed in) -->
+    <main id="app" class="hidden">
+      <header class="topbar">
+        <span class="topbar__brand"><img src="./icon.png" alt="" />Feed</span>
+        <button id="theme-btn" class="icon-btn" title="Alternar tema" aria-label="Alternar tema">◐</button>
+        <button id="signout-btn" class="icon-btn" title="Sair" aria-label="Sair">⏻</button>
+      </header>
+      <div id="feed" class="feed"></div>
+    </main>
+
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="./app.js" defer></script>
+  </body>
+</html>
