@@ -38,12 +38,27 @@
     <main id="app" class="hidden">
       <header class="topbar">
         <span class="topbar__brand"><img src="./icon.png" alt="" /><span id="brand-title">Feed</span></span>
-        <div class="lang-toggle" id="lang-toggle">
-          <button data-lang="pt">PT</button>
-          <button data-lang="en">EN</button>
+        <div class="user">
+          <button id="user-btn" class="user-btn" aria-label="Menu" aria-haspopup="true"></button>
+          <div id="user-menu" class="menu hidden" role="menu">
+            <div class="menu__section">
+              <div class="menu__label" id="menu-lang-label">Idioma</div>
+              <div class="menu__seg" id="menu-lang">
+                <button data-lang="pt">PT</button>
+                <button data-lang="en">EN</button>
+              </div>
+            </div>
+            <div class="menu__section">
+              <div class="menu__label" id="menu-theme-label">Aparência</div>
+              <div class="menu__seg" id="menu-theme">
+                <button data-theme-pref="system"></button>
+                <button data-theme-pref="light"></button>
+                <button data-theme-pref="dark"></button>
+              </div>
+            </div>
+            <button class="menu__logout" id="menu-logout"></button>
+          </div>
         </div>
-        <button id="theme-btn" class="icon-btn" title="Tema" aria-label="Tema">◐</button>
-        <button id="signout-btn" class="icon-btn" title="Sair" aria-label="Sair">⏻</button>
       </header>
 
       <div class="feed">
@@ -53,8 +68,18 @@
         <section id="market" class="market"></section>
         <nav id="tagbar" class="tagbar"></nav>
         <div id="feed-list" class="feed-list"></div>
+        <section id="history" class="history hidden"></section>
       </div>
     </main>
+
+    <!-- Post detail modal -->
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal__backdrop" id="modal-backdrop"></div>
+      <div class="modal__panel">
+        <button class="modal__close" id="modal-close" aria-label="Fechar">✕</button>
+        <div class="modal__scroll" id="modal-content"></div>
+      </div>
+    </div>
 
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="./i18n.js" defer></script>
