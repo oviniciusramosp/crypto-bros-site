@@ -120,7 +120,14 @@ body {
   display: inline-flex; align-items: center; justify-content: center;
 }
 .user-btn img, .topbar-avatar { width: 100%; height: 100%; object-fit: cover; border-radius: var(--radius-pill); }
-.topbar-avatar.avatar--ph { background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+/* User avatar placeholder = initials on grey (per app request) */
+.topbar-avatar.avatar--ph { background: #71717A; color: #fff; font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+.menu__user { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.menu__user-avatar { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; flex: 0 0 auto; }
+.menu__user-avatar .topbar-avatar.avatar--ph { font-size: 15px; }
+.menu__user-info { min-width: 0; }
+.menu__user-name { font-size: 14px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu__user-email { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu {
   position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; width: 240px;
   background: var(--surface); border: 1px solid var(--inner-border); border-radius: 14px;

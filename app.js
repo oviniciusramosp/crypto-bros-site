@@ -10,6 +10,7 @@ const SESSION_KEY = 'cb-session';
 const THEME_KEY = 'cb-theme'; // 'light' | 'dark' | absent(=system)
 const AVATAR_KEY = 'cb-avatar';
 const NAME_KEY = 'cb-name';
+const EMAIL_KEY = 'cb-email';
 const HISTORY_PAGE_SIZE = 5;
 
 const $ = (id) => document.getElementById(id);
@@ -104,6 +105,7 @@ async function onGoogleCredential(response) {
     if (claims) {
       if (claims.picture) localStorage.setItem(AVATAR_KEY, claims.picture);
       if (claims.name) localStorage.setItem(NAME_KEY, claims.name);
+      if (claims.email) localStorage.setItem(EMAIL_KEY, claims.email);
     }
     const res = await fetch(`${CONFIG.workerBase}/auth/google`, {
       method: 'POST',
@@ -131,13 +133,22 @@ function signOut() {
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(AVATAR_KEY);
   localStorage.removeItem(NAME_KEY);
+  localStorage.removeItem(EMAIL_KEY);
   if (marqueeTimer) clearInterval(marqueeTimer);
   $('user-menu').classList.add('hidden');
   showLogin();
 }
+function displayName() {
+  return localStorage.getItem(NAME_KEY) || (isPreview() ? 'Crypto Bro' : 'Usuário');
+}
+function initials(name) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const s = (parts[0]?.[0] || '') + (parts.length > 1 ? parts[parts.length - 1][0] : '');
+  return s.toUpperCase() || 'U';
+}
 function userAvatarNode() {
   const src = localStorage.getItem(AVATAR_KEY);
-  const name = localStorage.getItem(NAME_KEY) || 'U';
+  const name = displayName();
   if (src) {
     const img = el('img', 'topbar-avatar');
     img.src = src; img.alt = ''; img.referrerPolicy = 'no-referrer';
@@ -147,7 +158,12 @@ function userAvatarNode() {
   return avatarPlaceholder(name);
 }
 function avatarPlaceholder(name) {
-  return el('div', 'topbar-avatar avatar--ph', name.charAt(0).toUpperCase());
+  return el('div', 'topbar-avatar avatar--ph', initials(name));
+}
+function renderMenuUser() {
+  $('menu-name').textContent = displayName();
+  $('menu-email').textContent = localStorage.getItem(EMAIL_KEY) || (isPreview() ? 'voce@exemplo.com' : '');
+  $('menu-avatar').replaceChildren(userAvatarNode());
 }
 
 // ── Popover menu ──────────────────────────────────────────────────────
@@ -177,6 +193,7 @@ function showApp() {
   $('login').classList.add('hidden');
   $('app').classList.remove('hidden');
   $('user-btn').replaceChildren(userAvatarNode());
+  renderMenuUser();
   applyStaticText();
   startMarquee();
   loadMarket();
