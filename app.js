@@ -4,8 +4,7 @@
 const CONFIG = {
   workerBase: 'https://crypto-bros-notion-proxy.crypto-bros.workers.dev',
   googleClientId: '947303618125-0k85q1ds1g8gfq3njtgsh1nc8ihug94p.apps.googleusercontent.com',
-  // TODO: replace with the real App Store URL once the app is published.
-  appStoreUrl: 'https://apps.apple.com/app/crypto-bros/id0000000000',
+  appStoreUrl: 'https://apps.apple.com/br/app/crypto-bros/id6758371729',
   // VAPID public key for Web Push (matches the Worker's VAPID_PRIVATE_JWK secret).
   vapidPublicKey: 'BNs6wLSOtdOlNEdTf20Ci5TUjfYMGCNAJ_3NvRhl0orN64eCjRWDabUcwpRHLN8jsfauqKDWbxiek6DiM8yIHDg',
 };
@@ -783,8 +782,14 @@ function isIOS() { return /iPad|iPhone|iPod/.test(navigator.userAgent) && !windo
 function isStandalone() {
   return navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
 }
+function isIOSSafari() {
+  const ua = navigator.userAgent;
+  return isIOS() && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
+}
 function maybeShowIosBanner() {
   if (!isIOS() || isStandalone() || localStorage.getItem('cb-banner-dismissed')) return;
+  if (isIOSSafari()) return; // native apple-itunes-app smart banner handles Safari
+
   $('ios-banner-sub').textContent = I18N.t('banner.install');
   const cta = $('ios-banner-cta');
   cta.textContent = I18N.t('banner.cta');
