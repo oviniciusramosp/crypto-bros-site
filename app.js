@@ -359,6 +359,11 @@ function richText(arr) {
 }
 function blockText(b) { const d = b[b.type]; return d ? richText(d.rich_text) : ''; }
 function imgUrl(d) { return d ? (d.external ? d.external.url : d.file ? d.file.url : null) : null; }
+function hostname(url) { try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return url; } }
+function youtubeEmbed(url) {
+  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([\w-]{11})/);
+  return m ? `https://www.youtube.com/embed/${m[1]}` : null;
+}
 
 function renderBlocks(blocks) {
   let html = '', listType = null, listItems = '';
@@ -391,8 +396,54 @@ function renderBlocks(blocks) {
       }
       case 'toggle': html += `<details><summary>${blockText(b)}</summary>${kids}</details>`; break;
       case 'code': html += `<pre><code>${escapeHtml((b.code.rich_text || []).map((r) => r.plain_text).join(''))}</code></pre>`; break;
-      case 'image': { const u = imgUrl(b.image); if (u) html += `<img src="${escapeHtml(u)}" loading="lazy" alt=""/>`; break; }
-      default: break; // divider, chart_embed, price_widget, video, table, bookmark → skipped
+      case 'divider': html += '<hr class="nb-hr"/>'; break;
+      case 'image': {
+        const u = imgUrl(b.image);
+        if (u) {
+          const cap = b.image && b.image.caption && b.image.caption.length ? richText(b.image.caption) : '';
+          html += `<figure class="nb-figure"><img src="${escapeHtml(u)}" loading="lazy" alt=""/>${cap ? `<figcaption>${cap}</figcaption>` : ''}</figure>`;
+        }
+        break;
+      }
+      case 'video': {
+        const v = b.video, u = v ? (v.external ? v.external.url : v.file ? v.file.url : null) : null;
+        if (u) {
+          const yt = youtubeEmbed(u);
+          html += yt
+            ? `<div class="nb-video"><iframe src="${yt}" allow="encrypted-media" allowfullscreen loading="lazy"></iframe></div>`
+            : `<div class="nb-video"><video src="${escapeHtml(u)}" controls></video></div>`;
+        }
+        break;
+      }
+      case 'bookmark': case 'embed': case 'link_preview': {
+        const d = b[t], u = d && d.url;
+        if (u) {
+          const cap = d.caption && d.caption.length ? richText(d.caption) : escapeHtml(u);
+          html += `<a class="nb-bookmark" href="${escapeHtml(u)}" target="_blank" rel="noopener"><span class="nb-bookmark-title">${cap}</span><span class="nb-bookmark-url">${escapeHtml(hostname(u))}</span></a>`;
+        }
+        break;
+      }
+      case 'table': {
+        const rows = (b.children || []).filter((r) => r.type === 'table_row');
+        if (rows.length) {
+          const hasHeader = b.table && b.table.has_column_header;
+          let head = '', bodyRows = '';
+          rows.forEach((r, ri) => {
+            const cells = (r.table_row && r.table_row.cells) || [];
+            if (hasHeader && ri === 0) head = `<thead><tr>${cells.map((c) => `<th>${richText(c)}</th>`).join('')}</tr></thead>`;
+            else bodyRows += `<tr>${cells.map((c) => `<td>${richText(c)}</td>`).join('')}</tr>`;
+          });
+          html += `<div class="nb-table-wrap"><table class="nb-table">${head}<tbody>${bodyRows}</tbody></table></div>`;
+        }
+        break;
+      }
+      case 'column_list': {
+        const cols = (b.children || []).filter((c) => c.type === 'column');
+        if (cols.length) html += `<div class="nb-columns">${cols.map((c) => `<div class="nb-column">${renderBlocks(c.children || [])}</div>`).join('')}</div>`;
+        break;
+      }
+      case 'equation': html += `<pre class="nb-eq"><code>${escapeHtml(b.equation ? b.equation.expression : '')}</code></pre>`; break;
+      default: break; // chart_embed / price_widget / unsupported_widget → app-only, skipped
     }
   }
   flushList();
@@ -624,6 +675,19 @@ function loadPreviewFeed() {
         { type: 'heading_3', heading_3: { rich_text: [{ plain_text: 'Pontos-chave', annotations: {} }] } },
         { type: 'bulleted_list_item', bulleted_list_item: { rich_text: [{ plain_text: 'Rompimento com volume acima da média', annotations: {} }] } },
         { type: 'bulleted_list_item', bulleted_list_item: { rich_text: [{ plain_text: 'Fundamentos on-chain sólidos', annotations: {} }] } },
+        { type: 'divider', divider: {} },
+        { type: 'image', image: { external: { url: mockCover('#1F2937', '#111827', '📈') }, caption: [{ plain_text: 'BTC/USD no gráfico diário', annotations: {} }] } },
+        { type: 'heading_2', heading_2: { rich_text: [{ plain_text: 'Níveis importantes', annotations: {} }] } },
+        { type: 'table', table: { has_column_header: true }, children: [
+          { type: 'table_row', table_row: { cells: [[{ plain_text: 'Nível', annotations: {} }], [{ plain_text: 'Preço', annotations: {} }]] } },
+          { type: 'table_row', table_row: { cells: [[{ plain_text: 'Suporte', annotations: {} }], [{ plain_text: 'US$ 68.000', annotations: {} }]] } },
+          { type: 'table_row', table_row: { cells: [[{ plain_text: 'Resistência', annotations: {} }], [{ plain_text: 'US$ 72.500', annotations: {} }]] } },
+        ] },
+        { type: 'column_list', column_list: {}, children: [
+          { type: 'column', column: {}, children: [{ type: 'paragraph', paragraph: { rich_text: [{ plain_text: 'Cenário otimista: continuação até novas máximas.', annotations: {} }] } }] },
+          { type: 'column', column: {}, children: [{ type: 'paragraph', paragraph: { rich_text: [{ plain_text: 'Cenário de risco: reteste do suporte em 68k.', annotations: {} }] } }] },
+        ] },
+        { type: 'bookmark', bookmark: { url: 'https://cryptobros.com', caption: [{ plain_text: 'Leia a análise completa', annotations: {} }] } },
       ],
     },
     {

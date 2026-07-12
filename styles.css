@@ -16,6 +16,10 @@
   --success: #22C55E;
   --error: #EF4444;
   --shadow-sm: 0px 2px 8px rgba(0, 0, 0, 0.3);
+  /* SegmentedControl (app parity — src/components/ui/SegmentedControl.tsx) */
+  --seg-track: rgba(255, 255, 255, 0.05);
+  --seg-active: rgba(255, 255, 255, 0.13);
+  --seg-active-text: rgba(255, 255, 255, 0.81);
 
   --cat-Mercado: #60A5FA;
   --cat-Estudos: #A78BFA;
@@ -53,6 +57,9 @@
   --cat-Video: #EF4444;
   --cat-ATH: #F59E0B;
   --cat-Mais: #71717A;
+  --seg-track: rgba(0, 0, 0, 0.03);
+  --seg-active: rgba(227, 226, 224, 0.5);
+  --seg-active-text: #37352F;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -121,12 +128,14 @@ body {
 }
 .menu__section { display: flex; flex-direction: column; gap: 8px; }
 .menu__label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-tertiary); }
-.menu__seg { display: flex; background: var(--bg-tertiary); border-radius: var(--radius-pill); padding: 2px; gap: 2px; }
+/* SegmentedControl — matches the app (track/indicator colors, 3px pad, 2px gap, no shadow) */
+.menu__seg { display: flex; flex-direction: row; gap: 2px; padding: 3px; background: var(--seg-track); border-radius: var(--radius-pill); }
 .menu__seg button {
-  flex: 1; border: none; background: none; padding: 6px 8px; border-radius: var(--radius-pill);
-  font-size: 13px; font-weight: 600; color: var(--text-secondary); font-family: var(--font); cursor: pointer;
+  flex: 1; border: none; background: none; cursor: pointer; font-family: var(--font);
+  padding: 6px 12px; border-radius: var(--radius-pill);
+  font-size: 13px; font-weight: 500; color: var(--text-secondary); transition: background 0.2s, color 0.2s;
 }
-.menu__seg button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+.menu__seg button.active { background: var(--seg-active); color: var(--seg-active-text); font-weight: 600; }
 .menu__logout {
   border: none; background: var(--bg-tertiary); color: var(--error); padding: 10px; border-radius: 10px;
   font-family: var(--font); font-size: 14px; font-weight: 600; cursor: pointer; text-align: center;
@@ -158,20 +167,24 @@ body {
 .history__pager button { width: 44px; height: 44px; border: none; background: none; cursor: pointer; color: var(--accent); display: inline-flex; align-items: center; justify-content: center; }
 .history__pager button:disabled { color: var(--text-tertiary); opacity: 0.3; cursor: default; }
 
-/* Post detail modal */
-.modal { position: fixed; inset: 0; z-index: 100; }
-.modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(2px); }
-.modal__panel {
-  position: absolute; top: 0; right: 0; bottom: 0; width: 100%; max-width: 680px;
-  background: var(--surface); overflow: hidden; display: flex; flex-direction: column;
-  animation: slide-in 0.3s ease; box-shadow: -8px 0 32px rgba(0,0,0,0.3);
+/* Post detail modal — centered card (like the cryptobro-app reference) */
+.modal {
+  position: fixed; inset: 0; z-index: 100; padding: 16px;
+  display: flex; align-items: center; justify-content: center;
 }
-@keyframes slide-in { from { transform: translateX(24px); opacity: 0.6; } to { transform: translateX(0); opacity: 1; } }
+.modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.65); backdrop-filter: blur(2px); }
+.modal__panel {
+  position: relative; width: 100%; max-width: min(95vw, 680px); max-height: 90vh;
+  background: var(--surface); border: 1px solid var(--inner-border);
+  border-radius: var(--radius-card); overflow: hidden; display: flex; flex-direction: column;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.5); animation: modal-in 0.2s ease;
+}
+@keyframes modal-in { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .modal__close {
   position: absolute; top: 16px; left: 16px; z-index: 2; width: 36px; height: 36px; border-radius: var(--radius-pill);
   border: none; background: rgba(0,0,0,0.5); color: #fff; font-size: 15px; cursor: pointer; backdrop-filter: blur(8px);
 }
-.modal__scroll { overflow-y: auto; height: 100%; }
+.modal__scroll { overflow-y: auto; flex: 1; }
 .modal__cover { width: 100%; aspect-ratio: 14 / 9; object-fit: cover; background: var(--bg-tertiary); display: block; }
 .modal__body { padding: 20px; }
 .modal__title { font-size: 24px; line-height: 30px; font-weight: 700; margin-top: 10px; }
@@ -193,6 +206,30 @@ body {
 .modal__content details { margin: 8px 0; }
 .modal__content summary { cursor: pointer; font-weight: 600; }
 .modal__state { padding: 60px 20px; text-align: center; color: var(--text-secondary); }
+
+/* Notion block elements (shared by card preview + modal content) */
+.nb-hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+.nb-figure { margin: 12px 0; }
+.nb-figure img { width: 100%; border-radius: 10px; display: block; }
+.nb-figure figcaption { margin-top: 6px; font-size: 12px; line-height: 16px; color: var(--text-tertiary); text-align: center; }
+.nb-video { position: relative; aspect-ratio: 16 / 9; margin: 12px 0; border-radius: 10px; overflow: hidden; background: #000; }
+.nb-video iframe, .nb-video video { position: absolute; inset: 0; width: 100%; height: 100%; border: none; }
+.nb-bookmark {
+  display: flex; flex-direction: column; gap: 4px; margin: 12px 0; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg-tertiary); text-decoration: none;
+}
+.nb-bookmark-title { color: var(--text); font-size: 14px; font-weight: 500; line-height: 18px; }
+.nb-bookmark-url { color: var(--text-tertiary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; margin: 12px 0; }
+.nb-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.nb-table th, .nb-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+.nb-table th { font-weight: 600; color: var(--text); background: var(--bg-tertiary); }
+.nb-table td { color: var(--text-secondary); }
+.nb-table tr:last-child td { border-bottom: none; }
+.nb-columns { display: flex; gap: 16px; margin: 8px 0; }
+.nb-column { flex: 1; min-width: 0; }
+@media (max-width: 520px) { .nb-columns { flex-direction: column; gap: 0; } }
+.nb-eq { font-style: italic; }
 
 /* ── Feed layout ────────────────────────────────────────────────────── */
 .feed { max-width: 640px; margin: 0 auto; padding-bottom: var(--pad-screen); }
