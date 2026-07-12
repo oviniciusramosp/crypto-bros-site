@@ -81,6 +81,7 @@ if (window.matchMedia) {
 function applyStaticText() {
   $('login-subtitle').textContent = I18N.t('login.subtitle');
   $('login-hint').textContent = I18N.t('login.hint');
+  $('g-fake-label').textContent = I18N.t('login.google');
   $('brand-title').textContent = I18N.t('header.title');
   renderMenuState();
 }
@@ -127,9 +128,10 @@ async function onGoogleCredential(response) {
 function initGoogle() {
   if (!window.google || !google.accounts) { setTimeout(initGoogle, 200); return; }
   google.accounts.id.initialize({ client_id: CONFIG.googleClientId, callback: onGoogleCredential, ux_mode: 'popup' });
-  const dark = document.documentElement.getAttribute('data-theme') !== 'light';
+  // Rendered invisibly (opacity 0) over the custom .g-fake button; width matches so
+  // the whole visible button is clickable. Theme is irrelevant since it's hidden.
   google.accounts.id.renderButton($('google-btn'), {
-    theme: dark ? 'filled_black' : 'outline', size: 'large', text: 'continue_with', shape: 'pill', logo_alignment: 'left',
+    theme: 'filled_black', size: 'large', text: 'continue_with', shape: 'pill', width: 300,
   });
 }
 function signOut() {
