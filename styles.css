@@ -247,6 +247,14 @@ body {
 .modal__content details { margin: 8px 0; }
 .modal__content summary { cursor: pointer; font-weight: 600; }
 .modal__state { padding: 60px 20px; text-align: center; color: var(--text-secondary); }
+.spinner { width: 30px; height: 30px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 72px auto; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Fullscreen image viewer (lightbox) for post body images */
+.lightbox { position: fixed; inset: 0; z-index: 300; background: rgba(0, 0, 0, 0.92); display: flex; align-items: center; justify-content: center; padding: 24px; cursor: zoom-out; }
+.lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
+.lightbox__close { position: absolute; top: 16px; right: 16px; width: 40px; height: 40px; border-radius: var(--radius-pill); border: none; background: rgba(255, 255, 255, 0.12); color: #fff; font-size: 17px; cursor: pointer; }
+.modal__content img, .modal__content .nb-figure img { cursor: zoom-in; }
 
 /* Notion block elements (shared by card preview + modal content) */
 .nb-hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }

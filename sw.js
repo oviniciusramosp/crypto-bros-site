@@ -2,9 +2,39 @@
 'use strict';
 
 const WORKER_BASE = 'https://crypto-bros-notion-proxy.crypto-bros.workers.dev';
+const CACHE = 'cb-cache-v1';
 
 self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener('activate', (e) => e.waitUntil((async () => {
+  // Drop stale asset caches from older SW versions.
+  const keys = await caches.keys();
+  await Promise.all(keys.filter((k) => k.startsWith('cb-cache') && k !== CACHE).map((k) => caches.delete(k)));
+  await self.clients.claim();
+})()));
+
+// Caching: same-origin assets = stale-while-revalidate; navigations = network-first
+// (so a fresh index.html always pulls the latest versioned ?v= assets). The Worker
+// API (cross-origin, gated) is never cached.
+self.addEventListener('fetch', (e) => {
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return; // Worker API + Google fonts/GIS → network
+
+  if (req.mode === 'navigate') {
+    e.respondWith(fetch(req).catch(() => caches.match(req).then((r) => r || caches.match('/'))));
+    return;
+  }
+  e.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    const cached = await cache.match(req);
+    const network = fetch(req).then((res) => {
+      if (res && res.ok) cache.put(req, res.clone());
+      return res;
+    }).catch(() => null);
+    return cached || (await network) || fetch(req);
+  })());
+});
 
 // Push has no payload (avoids encryption); fetch the newest post to build the notification.
 self.addEventListener('push', (event) => {

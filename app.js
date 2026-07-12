@@ -412,8 +412,8 @@ function youtubeEmbed(url) {
   return m ? `https://www.youtube.com/embed/${m[1]}` : null;
 }
 
-function renderBlocks(blocks) {
-  let html = '', listType = null, listItems = '';
+function renderBlocks(blocks, skipFirstDivider) {
+  let html = '', listType = null, listItems = '', firstDividerSkipped = false;
   const flushList = () => {
     if (listType) { html += `<${listType}>${listItems}</${listType}>`; listType = null; listItems = ''; }
   };
@@ -443,7 +443,11 @@ function renderBlocks(blocks) {
       }
       case 'toggle': html += `<details><summary>${blockText(b)}</summary>${kids}</details>`; break;
       case 'code': html += `<pre><code>${escapeHtml((b.code.rich_text || []).map((r) => r.plain_text).join(''))}</code></pre>`; break;
-      case 'divider': html += '<hr class="nb-hr"/>'; break;
+      case 'divider':
+        // The first divider is the preview/full boundary (marks "Continuar Lendo") — never rendered.
+        if (skipFirstDivider && !firstDividerSkipped) { firstDividerSkipped = true; break; }
+        html += '<hr class="nb-hr"/>';
+        break;
       case 'image': {
         const u = imgUrl(b.image);
         if (u) {
@@ -550,7 +554,7 @@ function renderCard(post) {
   body.appendChild(title);
 
   const preview = el('div', 'card__preview');
-  if (post.previewBlocks && post.previewBlocks.length) preview.innerHTML = renderBlocks(post.previewBlocks);
+  if (post.previewBlocks && post.previewBlocks.length) preview.innerHTML = renderBlocks(post.previewBlocks, true);
   else if (post.excerpt) preview.appendChild(el('p', 'excerpt-clamp', post.excerpt));
   if (preview.innerHTML) body.appendChild(preview);
 
@@ -637,18 +641,7 @@ function skeletons(n) {
   }
   return frag;
 }
-async function loadFeed() {
-  $('feed-list').replaceChildren(skeletons(3));
-  $('history').classList.add('hidden');
-  let res;
-  try {
-    res = await fetch(`${CONFIG.workerBase}/web/feed?lang=${I18N.notionLang}`, {
-      headers: { Authorization: `Bearer ${getSession()}` },
-    });
-  } catch (e) { $('feed-list').replaceChildren(stateNode(I18N.t('offline.message'), null, loadFeed)); return; }
-  if (res.status === 401) { localStorage.removeItem(SESSION_KEY); showLogin(); return; }
-  if (!res.ok) { $('feed-list').replaceChildren(stateNode(I18N.t('error.title'), I18N.t('error.message'), loadFeed)); return; }
-  const data = await res.json();
+function applyFeedData(data) {
   feedPosts = data.posts || [];
   feedHistory = data.history || [];
   feedTags = data.tags || [];
@@ -656,6 +649,34 @@ async function loadFeed() {
   historyPage = 0;
   renderTags();
   renderFeed();
+}
+// Stale-while-revalidate: render the cached feed instantly, then refresh from the network.
+async function loadFeed() {
+  const cacheKey = `cb-feed-${I18N.notionLang}`;
+  let showedCache = false;
+  try {
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) { applyFeedData(JSON.parse(cached)); showedCache = true; }
+  } catch (e) {}
+  if (!showedCache) { $('feed-list').replaceChildren(skeletons(3)); $('history').classList.add('hidden'); }
+
+  let res;
+  try {
+    res = await fetch(`${CONFIG.workerBase}/web/feed?lang=${I18N.notionLang}`, {
+      headers: { Authorization: `Bearer ${getSession()}` },
+    });
+  } catch (e) {
+    if (!showedCache) $('feed-list').replaceChildren(stateNode(I18N.t('offline.message'), null, loadFeed));
+    return;
+  }
+  if (res.status === 401) { localStorage.removeItem(SESSION_KEY); showLogin(); return; }
+  if (!res.ok) {
+    if (!showedCache) $('feed-list').replaceChildren(stateNode(I18N.t('error.title'), I18N.t('error.message'), loadFeed));
+    return;
+  }
+  const data = await res.json();
+  try { sessionStorage.setItem(cacheKey, JSON.stringify(data)); } catch (e) {}
+  applyFeedData(data);
 }
 
 // ── Post detail modal ─────────────────────────────────────────────────
@@ -668,6 +689,16 @@ function closeModal(fromPop) {
   if (!fromPop && new URLSearchParams(location.search).has('post')) {
     history.pushState({}, '', location.pathname);
   }
+}
+function openLightbox(src) {
+  $('lightbox-img').src = src;
+  $('lightbox').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+function closeLightbox() {
+  $('lightbox').classList.add('hidden');
+  $('lightbox-img').removeAttribute('src');
+  if ($('modal').classList.contains('hidden')) document.body.style.overflow = '';
 }
 function toast(msg) {
   const t = el('div', 'toast', msg);
@@ -693,7 +724,8 @@ function renderPostModal(post) {
   c.replaceChildren();
   if (post.cover) {
     const img = el('img', 'modal__cover');
-    img.src = post.cover; img.alt = ''; img.onerror = () => img.remove();
+    img.src = post.cover; img.alt = ''; img.loading = 'lazy'; img.decoding = 'async';
+    img.onerror = () => img.remove();
     c.appendChild(img);
   }
   const body = el('div', 'modal__body');
@@ -702,16 +734,18 @@ function renderPostModal(post) {
   title.innerHTML = titleHtml(post);
   body.appendChild(title);
   const content = el('div', 'modal__content');
-  content.innerHTML = renderBlocks(post.blocks || post.previewBlocks || []);
+  content.innerHTML = renderBlocks(post.blocks || post.previewBlocks || [], true);
   body.appendChild(content);
   c.appendChild(body);
   c.scrollTop = 0;
 }
+const postCache = {}; // id → full post (in-memory, session-lived)
 async function openPost(id, fromPop) {
   currentPostId = id;
   if (!fromPop) history.pushState({ post: id }, '', `?post=${encodeURIComponent(id)}`);
   openModal();
-  $('modal-content').innerHTML = `<div class="modal__state">…</div>`;
+  if (postCache[id]) { renderPostModal(postCache[id]); return; }
+  $('modal-content').innerHTML = '<div class="spinner"></div>';
   if (isPreview()) {
     const m = feedPosts.find((p) => p.id === id) || feedHistory.find((p) => p.id === id);
     if (m) renderPostModal(m); else $('modal-content').innerHTML = `<div class="modal__state">${I18N.t('modal.error')}</div>`;
@@ -723,7 +757,9 @@ async function openPost(id, fromPop) {
     });
     if (res.status === 401) { closeModal(); localStorage.removeItem(SESSION_KEY); showLogin(); return; }
     if (!res.ok) throw new Error();
-    renderPostModal(await res.json());
+    const post = await res.json();
+    postCache[id] = post;
+    if (currentPostId === id) renderPostModal(post); // ignore if the user already opened another post
   } catch (e) {
     $('modal-content').innerHTML = `<div class="modal__state">${I18N.t('modal.error')}</div>`;
   }
@@ -885,10 +921,23 @@ $('ios-banner-close').addEventListener('click', () => {
 $('modal-close').addEventListener('click', () => closeModal());
 $('modal-backdrop').addEventListener('click', () => closeModal());
 $('modal-share').addEventListener('click', shareCurrentPost);
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeMenu(); } });
+// Post body images → fullscreen viewer
+$('modal-content').addEventListener('click', (e) => {
+  const img = e.target.closest('img');
+  if (img && img.currentSrc) { e.stopPropagation(); openLightbox(img.currentSrc); }
+});
+$('lightbox').addEventListener('click', closeLightbox);
+$('lightbox-close').addEventListener('click', closeLightbox);
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!$('lightbox').classList.contains('hidden')) { closeLightbox(); return; }
+  closeModal(); closeMenu();
+});
 window.addEventListener('popstate', () => {
   const id = new URLSearchParams(location.search).get('post');
   if (id) openPost(id, true); else closeModal(true);
 });
+// Register the service worker for app-shell/asset caching (push permission is separate).
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 if (getSession() || isPreview()) { showApp(); } else { showLogin(); }
