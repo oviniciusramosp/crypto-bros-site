@@ -809,13 +809,14 @@ function urlB64ToUint8(base64) {
   const raw = atob(b64);
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
+const BELL_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
 async function updateNotifButton() {
   const btn = $('menu-notif');
   if (!btn) return;
   if (!pushSupported()) { btn.classList.add('hidden'); return; }
   btn.classList.remove('hidden');
   if (Notification.permission === 'denied') {
-    btn.textContent = I18N.t('notif.blocked'); btn.disabled = true; btn.classList.remove('on'); return;
+    btn.innerHTML = BELL_ICON + `<span>${I18N.t('notif.blocked')}</span>`; btn.disabled = true; btn.classList.remove('on'); return;
   }
   btn.disabled = false;
   let subscribed = false;
@@ -823,7 +824,7 @@ async function updateNotifButton() {
     const reg = await navigator.serviceWorker.getRegistration();
     if (reg) subscribed = !!(await reg.pushManager.getSubscription());
   } catch (e) {}
-  btn.textContent = '🔔 ' + I18N.t(subscribed ? 'notif.enabled' : 'notif.enable');
+  btn.innerHTML = BELL_ICON + `<span>${I18N.t(subscribed ? 'notif.enabled' : 'notif.enable')}</span>`;
   btn.classList.toggle('on', subscribed);
 }
 async function enableNotifications() {
@@ -851,7 +852,7 @@ async function enableNotifications() {
 applyTheme();
 $('user-btn').addEventListener('click', (e) => { e.stopPropagation(); $('user-menu').classList.toggle('hidden'); });
 document.addEventListener('click', (e) => {
-  if (!$('user-menu').classList.contains('hidden') && !$('user') .contains(e.target)) $('user-menu').classList.add('hidden');
+  if (!$('user-menu').classList.contains('hidden') && !e.target.closest('.user')) closeMenu();
 });
 document.querySelectorAll('#menu-lang button').forEach((b) =>
   b.addEventListener('click', () => onLangChange(b.dataset.lang)));
