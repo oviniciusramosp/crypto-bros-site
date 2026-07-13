@@ -568,6 +568,81 @@ function youtubeEmbed(url) {
   return m ? `https://www.youtube.com/embed/${m[1]}` : null;
 }
 
+// ── Bookmark cards ────────────────────────────────────────────────────
+//
+// App parity (BookmarkBlock.tsx): a card with the page's og:title, its favicon + domain,
+// and a preview image on the right — with the Notion caption BELOW the card, not used as
+// the title. The app scrapes the target page itself; a browser cannot (arbitrary sites
+// send no CORS headers), so the metadata comes from the Worker's /web/link-preview.
+//
+// renderBlocks() is synchronous, so the card is emitted with the domain as a placeholder
+// title and hydrated once it is in the DOM.
+
+const LINK_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>';
+
+function bookmarkHtml(url, caption) {
+  const host = escapeHtml(hostname(url));
+  const cap = caption && caption.length ? richText(caption) : '';
+  return (
+    `<div class="nb-bookmark-wrap">` +
+      `<a class="nb-bookmark" href="${escapeHtml(url)}" target="_blank" rel="noopener" data-preview="${escapeHtml(url)}">` +
+        `<div class="nb-bookmark-body">` +
+          `<div class="nb-bookmark-title">${host}</div>` +
+          `<div class="nb-bookmark-meta">` +
+            `<span class="nb-bookmark-icon">${LINK_ICON_SVG}</span>` +
+            `<span class="nb-bookmark-url">${host}</span>` +
+          `</div>` +
+        `</div>` +
+      `</a>` +
+      (cap ? `<div class="nb-bookmark-caption">${cap}</div>` : '') +
+    `</div>`
+  );
+}
+
+const linkPreviewCache = {}; // url → { title, description, image, favicon }
+
+/** Fill in og: title / favicon / preview image for every bookmark card under `root`. */
+async function hydrateBookmarks(root) {
+  const cards = [...root.querySelectorAll('.nb-bookmark[data-preview]')];
+  await Promise.all(
+    cards.map(async (card) => {
+      const url = card.dataset.preview;
+      delete card.dataset.preview; // hydrate once, even if this node is re-scanned
+      let p = linkPreviewCache[url];
+      if (!p) {
+        try {
+          const res = await fetch(
+            `${CONFIG.workerBase}/web/link-preview?url=${encodeURIComponent(url)}`,
+          );
+          if (!res.ok) return; // leave the domain-only placeholder — it is still a valid link
+          p = await res.json();
+          linkPreviewCache[url] = p;
+        } catch (e) {
+          return;
+        }
+      }
+      if (p.title) card.querySelector('.nb-bookmark-title').textContent = p.title;
+      if (p.favicon) {
+        const img = el('img', 'nb-bookmark-favicon');
+        img.src = p.favicon;
+        img.alt = '';
+        img.loading = 'lazy';
+        img.onerror = () => img.remove(); // a broken favicon must not leave a gap
+        card.querySelector('.nb-bookmark-icon').replaceChildren(img);
+      }
+      if (p.image) {
+        const img = el('img', 'nb-bookmark-preview');
+        img.src = p.image;
+        img.alt = '';
+        img.loading = 'lazy';
+        img.onerror = () => img.remove();
+        card.appendChild(img);
+      }
+    }),
+  );
+}
+
 function renderBlocks(blocks, skipFirstDivider) {
   let html = '', listType = null, listItems = '', firstDividerSkipped = false;
   const flushList = () => {
@@ -610,7 +685,21 @@ function renderBlocks(blocks, skipFirstDivider) {
       case 'image': {
         const u = imgUrl(b.image);
         if (u) {
-          const cap = b.image && b.image.caption && b.image.caption.length ? richText(b.image.caption) : '';
+          // Theme-gating (app parity — ImageBlock.tsx): a caption containing [light] means
+          // the image is light-mode only, [dark] means dark-mode only. The marker is an
+          // instruction, not a caption, so it is stripped from what gets shown.
+          const caption = (b.image && b.image.caption) || [];
+          const plain = caption.map((t) => t.plain_text || '').join('').toLowerCase();
+          const lightOnly = plain.includes('[light]');
+          const darkOnly = plain.includes('[dark]');
+          if ((lightOnly && isDark()) || (darkOnly && !isDark())) break; // wrong theme → drop it
+
+          const shown = (lightOnly || darkOnly)
+            ? caption
+                .map((t) => ({ ...t, plain_text: (t.plain_text || '').replace(/\[(light|dark)\]/gi, '').trim() }))
+                .filter((t) => t.plain_text !== '')
+            : caption;
+          const cap = shown.length ? richText(shown) : '';
           html += `<figure class="nb-figure"><img src="${escapeHtml(u)}" loading="lazy" alt=""/>${cap ? `<figcaption>${cap}</figcaption>` : ''}</figure>`;
         }
         break;
@@ -627,10 +716,7 @@ function renderBlocks(blocks, skipFirstDivider) {
       }
       case 'bookmark': case 'embed': case 'link_preview': {
         const d = b[t], u = d && d.url;
-        if (u) {
-          const cap = d.caption && d.caption.length ? richText(d.caption) : escapeHtml(u);
-          html += `<a class="nb-bookmark" href="${escapeHtml(u)}" target="_blank" rel="noopener"><span class="nb-bookmark-title">${cap}</span><span class="nb-bookmark-url">${escapeHtml(hostname(u))}</span></a>`;
-        }
+        if (u) html += bookmarkHtml(u, d.caption);
         break;
       }
       case 'table': {
@@ -741,6 +827,7 @@ function renderFeed() {
     const frag = document.createDocumentFragment();
     posts.forEach((p) => frag.appendChild(renderCard(p)));
     list.replaceChildren(frag);
+    hydrateBookmarks(list);
   }
   renderHistory();
 }
@@ -898,6 +985,7 @@ function renderPostModal(post) {
   body.appendChild(content);
   c.appendChild(body);
   c.scrollTop = 0;
+  hydrateBookmarks(content);
 }
 const postCache = {}; // id → full post (in-memory, session-lived)
 async function openPost(id, fromPop) {
@@ -1113,6 +1201,7 @@ function renderLessonModal(lesson) {
   c.appendChild(body);
   c.scrollTop = 0;
   renderCompleteButton(lesson.completed);
+  hydrateBookmarks(content);
 }
 
 async function openLesson(id, fromPop) {
@@ -1369,7 +1458,12 @@ document.querySelectorAll('#viewbar button').forEach((b) =>
 // Post body images → fullscreen viewer
 $('modal-content').addEventListener('click', (e) => {
   const img = e.target.closest('img');
-  if (img && img.currentSrc) { e.stopPropagation(); openLightbox(img.currentSrc); }
+  // A bookmark's thumbnail/favicon belong to the link — clicking one must follow it,
+  // not hijack the click into the lightbox.
+  if (img && img.currentSrc && !img.closest('.nb-bookmark')) {
+    e.stopPropagation();
+    openLightbox(img.currentSrc);
+  }
 });
 $('lightbox').addEventListener('click', closeLightbox);
 $('lightbox-close').addEventListener('click', closeLightbox);

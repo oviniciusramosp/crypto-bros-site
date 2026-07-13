@@ -22,6 +22,8 @@
   --seg-active-text: rgba(255, 255, 255, 0.81);
   /* Lesson progress donut (app parity — ModuleProgressDonut.tsx) */
   --donut-track: rgba(255, 255, 255, 0.08);
+  /* Bookmark card (app parity — BookmarkBlock.tsx) */
+  --bookmark-bg: rgba(255, 255, 255, 0.05);
 
   --cat-Mercado: #60A5FA;
   --cat-Estudos: #A78BFA;
@@ -63,6 +65,7 @@
   --seg-active: rgba(227, 226, 224, 0.5);
   --seg-active-text: #37352F;
   --donut-track: rgba(0, 0, 0, 0.06);
+  --bookmark-bg: rgba(0, 0, 0, 0.03);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -338,18 +341,39 @@ body {
 .modal__cover { width: 100%; aspect-ratio: 14 / 9; object-fit: cover; background: var(--bg-tertiary); display: block; }
 .modal__body { padding: 20px; }
 .modal__title { font-size: 24px; line-height: 30px; font-weight: 700; margin-top: 10px; }
-.modal__content { margin-top: 16px; }
+/* Notion block typography + spacing — ported verbatim from the app's block components
+   (HeadingBlock.tsx, ParagraphBlock.tsx).
+
+   `display: flex; flex-direction: column` is what makes the numbers transferable: React
+   Native does NOT collapse adjacent margins, CSS does. Without it, a paragraph's 4px
+   bottom next to a heading's 20px top collapses to 20px instead of adding up to 24px —
+   every gap in the document comes out short. Flex containers do not collapse margins. */
+.modal__content { margin-top: 16px; display: flex; flex-direction: column; }
+.modal__content > *:first-child { margin-top: 0; }
 .modal__content > *:last-child { margin-bottom: 0; }
-.modal__content p { margin: 0 0 12px; font-size: 15px; line-height: 24px; }
-.modal__content h1 { font-size: 24px; line-height: 30px; font-weight: 700; margin: 16px 0 8px; }
-.modal__content h2 { font-size: 20px; line-height: 26px; font-weight: 700; margin: 16px 0 8px; }
-.modal__content h3 { font-size: 17px; line-height: 22px; font-weight: 600; margin: 12px 0 8px; }
+.modal__content p  { margin: 4px 0;      font-size: 14px; line-height: 22px; }
+.modal__content h1 { margin: 24px 0 8px; font-size: 20px; line-height: 26px; font-weight: 700; }
+.modal__content h2 { margin: 20px 0 6px; font-size: 18px; line-height: 24px; font-weight: 600; }
+.modal__content h3 { margin: 16px 0 4px; font-size: 16px; line-height: 22px; font-weight: 600; }
 .modal__content ul, .modal__content ol { padding-left: 22px; margin: 0 0 12px; }
 .modal__content li { margin: 4px 0; font-size: 15px; line-height: 24px; }
 .modal__content img { width: 100%; border-radius: 10px; margin: 12px 0; }
 .modal__content blockquote { border-left: 3px solid var(--accent); padding-left: 14px; margin: 12px 0; color: var(--text-secondary); }
-/* bg + text come from the block's Notion colour (set inline by calloutColors()). */
-.modal__content .callout { display: flex; gap: 10px; border-radius: 10px; padding: 14px; margin: 12px 0; }
+/* bg + text come from the block's Notion colour (set inline by calloutColors()).
+   Geometry from the app's CalloutBlock.tsx: 28px icon column + 12px gutter, 16px padding,
+   8px vertical margin, radius 8 (BORDER_RADIUS.md).
+
+   The first child's top margin is zeroed: a callout that opens with a heading was pushing
+   its title down by the heading's 16-24px margin-top while the icon stayed pinned to the
+   padding edge — which is exactly the icon/title misalignment. */
+.modal__content .callout {
+  display: flex; align-items: flex-start;
+  border-radius: 8px; padding: 16px; margin: 8px 0;
+}
+.callout-emoji { flex: 0 0 28px; width: 28px; margin-right: 12px; font-size: 22px; line-height: 26px; }
+.callout > div { flex: 1; min-width: 0; }
+.callout > div > *:first-child { margin-top: 0; }
+.callout > div > *:last-child { margin-bottom: 0; }
 .modal__content code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg-tertiary); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
 .modal__content pre { background: var(--bg-tertiary); padding: 14px; border-radius: 10px; overflow-x: auto; margin: 12px 0; }
 .modal__content pre code { background: none; padding: 0; }
@@ -365,6 +389,8 @@ body {
 .lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
 .lightbox__close { position: absolute; top: 16px; right: 16px; width: 40px; height: 40px; border-radius: var(--radius-pill); border: none; background: rgba(255, 255, 255, 0.12); color: #fff; font-size: 17px; cursor: pointer; }
 .modal__content img, .modal__content .nb-figure img { cursor: zoom-in; }
+/* A bookmark's thumb/favicon are part of a link, not zoomable content. */
+.modal__content .nb-bookmark img { cursor: pointer; }
 
 /* Notion block elements (shared by card preview + modal content) */
 .nb-hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
@@ -373,12 +399,32 @@ body {
 .nb-figure figcaption { margin-top: 6px; font-size: 12px; line-height: 16px; color: var(--text-tertiary); text-align: center; }
 .nb-video { position: relative; aspect-ratio: 16 / 9; margin: 12px 0; border-radius: 10px; overflow: hidden; background: #000; }
 .nb-video iframe, .nb-video video { position: absolute; inset: 0; width: 100%; height: 100%; border: none; }
+/* Bookmark card — app parity (BookmarkBlock.tsx): og:title + favicon/domain on the left,
+   preview image on the right, Notion caption BELOW the card (not used as the title). */
+.nb-bookmark-wrap { margin: 12px 0; }
 .nb-bookmark {
-  display: flex; flex-direction: column; gap: 4px; margin: 12px 0; padding: 12px 14px;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--bg-tertiary); text-decoration: none;
+  display: flex; flex-direction: row; align-items: stretch;
+  border-radius: 8px; overflow: hidden; background: var(--bookmark-bg); text-decoration: none;
+  transition: opacity 0.12s;
 }
-.nb-bookmark-title { color: var(--text); font-size: 14px; font-weight: 500; line-height: 18px; }
-.nb-bookmark-url { color: var(--text-tertiary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-bookmark:hover { opacity: 0.7; }
+.nb-bookmark-body { flex: 1; min-width: 0; padding: 14px; display: flex; flex-direction: column; justify-content: center; gap: 6px; }
+.nb-bookmark-title {
+  color: var(--text); font-size: 14px; line-height: 20px; font-weight: 500;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.nb-bookmark-meta { display: flex; flex-direction: row; align-items: center; min-width: 0; }
+.nb-bookmark-icon { flex: 0 0 auto; display: inline-flex; margin-right: 6px; color: var(--text-secondary); }
+.nb-bookmark-icon svg { width: 14px; height: 14px; }
+/* Two classes, to outrank `.modal__content img { width: 100% }` (0,1,1) — otherwise the
+   favicon and the preview thumb inflate to the full card width. */
+.nb-bookmark .nb-bookmark-favicon { width: 16px; height: 16px; margin: 0; border-radius: 2px; object-fit: contain; }
+.nb-bookmark-url { flex: 1; min-width: 0; color: var(--text-secondary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-bookmark .nb-bookmark-preview {
+  flex: 0 0 100px; width: 100px; min-height: 80px; margin: 0; border-radius: 0;
+  object-fit: cover; align-self: stretch; cursor: pointer;
+}
+.nb-bookmark-caption { margin-top: 8px; padding: 0 4px; color: var(--text-secondary); font-size: 12px; line-height: 16px; }
 .nb-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; margin: 12px 0; }
 .nb-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .nb-table th, .nb-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -475,17 +521,19 @@ body {
 .card__title .emoji { margin-right: 8px; }
 .title-chip { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; color: #fff; text-transform: uppercase; margin-right: 6px; vertical-align: middle; }
 
-.card__preview { margin-top: 12px; }
+.card__preview { margin-top: 12px; display: flex; flex-direction: column; }
+.card__preview > *:first-child { margin-top: 0; }
 .card__preview > *:last-child { margin-bottom: 0; }
-.card__preview p { margin: 0 0 8px; color: var(--text-secondary); font-size: 14px; line-height: 22px; }
-.card__preview h1 { font-size: 20px; line-height: 26px; font-weight: 700; margin: 8px 0; }
-.card__preview h2 { font-size: 18px; line-height: 24px; font-weight: 700; margin: 8px 0; }
-.card__preview h3 { font-size: 16px; line-height: 22px; font-weight: 600; margin: 8px 0; }
+.card__preview > *:last-child { margin-bottom: 0; }
+.card__preview p  { margin: 4px 0;      color: var(--text-secondary); font-size: 14px; line-height: 22px; }
+.card__preview h1 { margin: 24px 0 8px; font-size: 20px; line-height: 26px; font-weight: 700; }
+.card__preview h2 { margin: 20px 0 6px; font-size: 18px; line-height: 24px; font-weight: 600; }
+.card__preview h3 { margin: 16px 0 4px; font-size: 16px; line-height: 22px; font-weight: 600; }
 .card__preview ul, .card__preview ol { padding-left: 20px; margin: 0 0 8px; color: var(--text-secondary); }
 .card__preview li { margin: 2px 0; font-size: 14px; line-height: 22px; }
 .card__preview img { width: 100%; border-radius: 8px; margin: 8px 0; }
 .card__preview blockquote { border-left: 3px solid var(--border); padding-left: 12px; margin: 8px 0; color: var(--text-secondary); }
-.card__preview .callout { display: flex; gap: 8px; border-radius: 8px; padding: 12px; margin: 8px 0; }
+.card__preview .callout { display: flex; align-items: flex-start; border-radius: 8px; padding: 16px; margin: 8px 0; }
 .card__preview .callout-emoji { flex: 0 0 auto; }
 .card__preview code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg-tertiary); padding: 1px 4px; border-radius: 4px; font-size: 12px; }
 .card__preview pre { background: var(--bg-tertiary); padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; }
