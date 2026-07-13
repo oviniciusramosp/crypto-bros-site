@@ -21,6 +21,26 @@ const getSession = () => localStorage.getItem(SESSION_KEY);
 const isPreview = () =>
   (location.hostname === 'localhost' || location.hostname === '127.0.0.1') && !getSession();
 
+/**
+ * Bearer-authed call to the Worker, with the dead-session path handled once.
+ * Returns null when the session is gone (the user has already been sent back to
+ * the login screen) — callers just bail. Network errors still throw, so a caller
+ * can tell "offline" apart from "signed out".
+ */
+async function authFetch(path, opts) {
+  const res = await fetch(`${CONFIG.workerBase}${path}`, {
+    ...opts,
+    headers: { Authorization: `Bearer ${getSession()}`, ...(opts && opts.headers) },
+  });
+  if (res.status === 401) {
+    localStorage.removeItem(SESSION_KEY);
+    closeModal(true);
+    showLogin();
+    return null;
+  }
+  return res;
+}
+
 let feedPosts = [];
 let feedHistory = [];
 let feedTags = [];
@@ -28,6 +48,7 @@ let selectedTag = 'all';
 let historyPage = 0;
 let marketData = { fng: null, mvrv: null };
 let marqueeTimer = null;
+let currentView = 'feed'; // 'feed' | 'lessons'
 
 // ── Utils ─────────────────────────────────────────────────────────────
 function el(tag, className, text) {
@@ -82,7 +103,9 @@ function applyStaticText() {
   $('login-subtitle').textContent = I18N.t('login.subtitle');
   $('login-hint').textContent = I18N.t('login.hint');
   $('g-fake-label').textContent = I18N.t('login.google');
-  $('brand-title').textContent = I18N.t('header.title');
+  $('viewbar-feed').textContent = I18N.t('view.feed');
+  $('viewbar-lessons').textContent = I18N.t('view.lessons');
+  $('brand-title').textContent = I18N.t(currentView === 'lessons' ? 'view.lessons' : 'view.feed');
   document.querySelectorAll('#login-lang button').forEach((b) =>
     b.classList.toggle('active', b.dataset.lang === I18N.lang));
   renderMenuState();
@@ -94,8 +117,15 @@ function onLangChange(lang) {
   applyStaticText();
   renderMarket();
   if ($('app').classList.contains('hidden')) return; // still on the login screen
+
+  // Language selects a different set of Notion rows entirely — drop everything cached
+  // under the old language, including any open lesson.
+  lessonModules = [];
+  for (const k of Object.keys(lessonCache)) delete lessonCache[k];
+
   if (isPreview()) { renderTags(); renderFeed(); return; }
-  loadFeed();
+  if (currentView === 'lessons') loadLessons();
+  else loadFeed();
 }
 
 // ── Locale suggestion (Cloudflare edge geo → Apple-style banner) ───────
@@ -240,7 +270,7 @@ function showApp() {
   startMarquee();
   loadMarket();
   if (isPreview()) { loadPreviewFeed(); } else { loadFeed(); }
-  checkDeepLink();
+  syncFromUrl(); // restores ?view= / ?post= / ?lesson= on load and after login
   maybeShowIosBanner();
   updateNotifButton();
 }
@@ -692,14 +722,12 @@ async function loadFeed() {
 
   let res;
   try {
-    res = await fetch(`${CONFIG.workerBase}/web/feed?lang=${I18N.notionLang}`, {
-      headers: { Authorization: `Bearer ${getSession()}` },
-    });
+    res = await authFetch(`/web/feed?lang=${I18N.notionLang}`);
   } catch (e) {
     if (!showedCache) $('feed-list').replaceChildren(stateNode(I18N.t('offline.message'), null, loadFeed));
     return;
   }
-  if (res.status === 401) { localStorage.removeItem(SESSION_KEY); showLogin(); return; }
+  if (!res) return; // session expired — authFetch already sent us to the login screen
   if (!res.ok) {
     if (!showedCache) $('feed-list').replaceChildren(stateNode(I18N.t('error.title'), I18N.t('error.message'), loadFeed));
     return;
@@ -716,9 +744,15 @@ function closeModal(fromPop) {
   $('modal').classList.add('hidden');
   document.body.style.overflow = '';
   currentPostId = null;
-  if (!fromPop && new URLSearchParams(location.search).has('post')) {
-    history.pushState({}, '', location.pathname);
-  }
+  currentLessonId = null;
+  $('modal-complete').classList.add('hidden');
+  $('modal-share').classList.remove('hidden');
+  if (fromPop) return;
+  const params = new URLSearchParams(location.search);
+  if (!params.has('post') && !params.has('lesson')) return;
+  // Go back to the view that opened the modal, not to a bare "/" — closing a lesson
+  // must land on Estudos, not on the Feed.
+  history.pushState({ view: currentView }, '', viewUrl(currentView));
 }
 function openLightbox(src) {
   $('lightbox-img').src = src;
@@ -746,11 +780,6 @@ async function shareCurrentPost() {
   } catch (e) { return; } // user cancelled native share
   try { await navigator.clipboard.writeText(url); toast(I18N.t('share.copied')); } catch (e) {}
 }
-/** Open the post named in ?post= on load / after login. */
-function checkDeepLink() {
-  const id = new URLSearchParams(location.search).get('post');
-  if (id) openPost(id, true);
-}
 function renderPostModal(post) {
   const c = $('modal-content');
   c.replaceChildren();
@@ -774,8 +803,11 @@ function renderPostModal(post) {
 const postCache = {}; // id → full post (in-memory, session-lived)
 async function openPost(id, fromPop) {
   currentPostId = id;
+  currentLessonId = null;
   if (!fromPop) history.pushState({ post: id }, '', `?post=${encodeURIComponent(id)}`);
   openModal();
+  $('modal-share').classList.remove('hidden');
+  $('modal-complete').classList.add('hidden');
   if (postCache[id]) { renderPostModal(postCache[id]); return; }
   $('modal-content').innerHTML = '<div class="spinner"></div>';
   if (isPreview()) {
@@ -784,10 +816,8 @@ async function openPost(id, fromPop) {
     return;
   }
   try {
-    const res = await fetch(`${CONFIG.workerBase}/web/post?id=${encodeURIComponent(id)}`, {
-      headers: { Authorization: `Bearer ${getSession()}` },
-    });
-    if (res.status === 401) { closeModal(); localStorage.removeItem(SESSION_KEY); showLogin(); return; }
+    const res = await authFetch(`/web/post?id=${encodeURIComponent(id)}`);
+    if (!res) return; // session expired
     if (!res.ok) throw new Error();
     const post = await res.json();
     postCache[id] = post;
@@ -795,6 +825,287 @@ async function openPost(id, fromPop) {
   } catch (e) {
     $('modal-content').innerHTML = `<div class="modal__state">${I18N.t('modal.error')}</div>`;
   }
+}
+
+// ── Estudos / Lessons ─────────────────────────────────────────────────
+//
+// Mirrors the app's Estudos tab: one card per module, a progress DONUT showing a
+// completed/total fraction (not a bar, not a percentage), and numbered lesson rows.
+// Grouping and ordering come from the Worker, which reuses the app's rules.
+
+let lessonModules = []; // [{ modulo, moduloEn, lessons, completed, total }]
+let currentLessonId = null;
+const lessonCache = {}; // id → full lesson (in-memory, session-lived)
+
+const LESSONS_CACHE_KEY = () => `cb-lessons-${I18N.notionLang}`;
+
+// r = (36 - 3.5) / 2 = 16.25 — the app's ModuleProgressDonut geometry.
+const DONUT_C = 2 * Math.PI * 16.25;
+
+function donutSvg(completed, total) {
+  const ratio = total > 0 ? completed / total : 0;
+  const done = total > 0 && completed === total;
+  return `<svg class="module__donut${done ? ' is-done' : ''}" viewBox="0 0 36 36" aria-hidden="true">
+    <circle class="donut__track" cx="18" cy="18" r="16.25"/>
+    <circle class="donut__arc" cx="18" cy="18" r="16.25"
+      stroke-dasharray="${DONUT_C.toFixed(2)}"
+      stroke-dashoffset="${(DONUT_C * (1 - ratio)).toFixed(2)}"/>
+    <text x="18" y="18" text-anchor="middle" dominant-baseline="central">${completed}/${total}</text>
+  </svg>`;
+}
+function checkSvg() {
+  return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+}
+
+/** Module names are written as "01 - Fundamentos"; split the number off the name. */
+function parseModuleName(modulo) {
+  const m = /^(\d+)\s*[-–—]\s*(.+)$/.exec(modulo || '');
+  return m ? { number: m[1], name: m[2].trim() } : { number: null, name: modulo || '' };
+}
+function moduleName(mod) {
+  return I18N.lang === 'en' && mod.moduloEn ? mod.moduloEn : mod.modulo;
+}
+function moduleLabel(mod) {
+  const { number } = parseModuleName(moduleName(mod));
+  const count = mod.total;
+  const word = I18N.t(count === 1 ? 'lessons.lessonSingular' : 'lessons.lessonPlural');
+  return number
+    ? I18N.t('lessons.moduleLabel', { number, count, word })
+    : I18N.t('lessons.moduleLabelExtra', { count, word });
+}
+
+function renderLessonRow(lesson, displayNumber) {
+  const row = el('button', 'lesson' + (lesson.completed ? ' is-done' : ''));
+  const badge = el('div', 'lesson__badge');
+  // The badge shows the lesson's POSITION in the module (index + 1), never the Notion
+  // "Aula" number — that one only orders, and it has gaps.
+  if (lesson.completed) badge.innerHTML = checkSvg();
+  else badge.textContent = String(displayNumber);
+  const main = el('div', 'lesson__main');
+  main.appendChild(el('div', 'lesson__title', lesson.title || '—'));
+  main.appendChild(el('div', 'lesson__date', I18N.formatDate(lesson.updatedAt)));
+  const chev = el('span', 'lesson__chev');
+  chev.innerHTML = chevronSvg();
+  row.appendChild(badge);
+  row.appendChild(main);
+  row.appendChild(chev);
+  row.addEventListener('click', () => openLesson(lesson.id));
+  return row;
+}
+
+function renderModuleCard(mod) {
+  const card = el('section', 'module');
+
+  const header = el('div', 'module__header');
+  const heading = el('div', 'module__heading');
+  heading.appendChild(el('div', 'module__label', moduleLabel(mod)));
+  heading.appendChild(el('div', 'module__title', parseModuleName(moduleName(mod)).name));
+  header.appendChild(heading);
+  const donut = el('div');
+  donut.innerHTML = donutSvg(mod.completed, mod.total);
+  header.appendChild(donut.firstElementChild);
+  card.appendChild(header);
+
+  const list = el('div', 'module__lessons');
+  mod.lessons.forEach((lesson, i) => list.appendChild(renderLessonRow(lesson, i + 1)));
+  card.appendChild(list);
+  return card;
+}
+
+function renderLessons() {
+  const list = $('lessons-list');
+  if (!lessonModules.length) {
+    list.replaceChildren(stateNode(I18N.t('lessons.empty'), I18N.t('lessons.emptyHint')));
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  lessonModules.forEach((m) => frag.appendChild(renderModuleCard(m)));
+  list.replaceChildren(frag);
+}
+
+function lessonSkeletons(n) {
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < n; i++) {
+    const c = el('section', 'module skeleton');
+    const h = el('div', 'module__header');
+    h.appendChild(el('div', 'sk-line short'));
+    c.appendChild(h);
+    const b = el('div', 'module__lessons');
+    b.appendChild(el('div', 'sk-line'));
+    b.appendChild(el('div', 'sk-line'));
+    c.appendChild(b);
+    frag.appendChild(c);
+  }
+  return frag;
+}
+
+function applyLessonsData(data) {
+  lessonModules = data.modules || [];
+  renderLessons();
+}
+
+/** Stale-while-revalidate, same shape as loadFeed(). */
+async function loadLessons() {
+  if (isPreview()) {
+    // Lessons are session-gated end to end (progress is per user), so there is nothing
+    // sensible to mock — say so instead of bouncing the previewer to the login screen.
+    $('lessons-list').replaceChildren(stateNode(I18N.t('lessons.title'), I18N.t('login.hint')));
+    return;
+  }
+
+  let showedCache = false;
+  try {
+    const cached = sessionStorage.getItem(LESSONS_CACHE_KEY());
+    if (cached) { applyLessonsData(JSON.parse(cached)); showedCache = true; }
+  } catch (e) {}
+  if (!showedCache) $('lessons-list').replaceChildren(lessonSkeletons(3));
+
+  let res;
+  try {
+    res = await authFetch(`/web/lessons?lang=${I18N.notionLang}`);
+  } catch (e) {
+    if (!showedCache) $('lessons-list').replaceChildren(stateNode(I18N.t('offline.message'), null, loadLessons));
+    return;
+  }
+  if (!res) return; // session expired
+  if (!res.ok) {
+    if (!showedCache) $('lessons-list').replaceChildren(stateNode(I18N.t('error.title'), I18N.t('error.message'), loadLessons));
+    return;
+  }
+  const data = await res.json();
+  cacheLessons(data);
+  applyLessonsData(data);
+}
+function cacheLessons(data) {
+  try { sessionStorage.setItem(LESSONS_CACHE_KEY(), JSON.stringify(data)); } catch (e) {}
+}
+
+// ── Lesson modal ──────────────────────────────────────────────────────
+function lessonBadgeText(lesson) {
+  const mod = lessonModules.find((m) => m.lessons.some((l) => l.id === lesson.id));
+  const name = parseModuleName(mod ? moduleName(mod) : lesson.modulo).name;
+  const number = mod ? mod.lessons.findIndex((l) => l.id === lesson.id) + 1 : 1;
+  return I18N.t('lessons.moduleBadge', { modulo: name, number });
+}
+
+function renderCompleteButton(completed) {
+  const btn = $('modal-complete');
+  btn.classList.toggle('is-done', !!completed);
+  const label = I18N.t(completed ? 'lessons.markUndone' : 'lessons.markDone');
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
+}
+
+function renderLessonModal(lesson) {
+  const c = $('modal-content');
+  c.replaceChildren();
+  if (lesson.cover) {
+    const img = el('img', 'modal__cover');
+    img.src = lesson.cover; img.alt = ''; img.loading = 'lazy'; img.decoding = 'async';
+    img.onerror = () => img.remove();
+    c.appendChild(img);
+  }
+  const body = el('div', 'modal__body');
+  body.appendChild(el('div', 'lesson-pill', lessonBadgeText(lesson)));
+  body.appendChild(el('h1', 'modal__title', lesson.title || ''));
+  const content = el('div', 'modal__content');
+  content.innerHTML = renderBlocks(lesson.blocks || [], true);
+  body.appendChild(content);
+  c.appendChild(body);
+  c.scrollTop = 0;
+  renderCompleteButton(lesson.completed);
+}
+
+async function openLesson(id, fromPop) {
+  currentLessonId = id;
+  currentPostId = null;
+  if (!fromPop) history.pushState({ lesson: id }, '', `?lesson=${encodeURIComponent(id)}`);
+  openModal();
+  $('modal-share').classList.add('hidden'); // lessons have no pre-generated /p/ page
+  $('modal-complete').classList.remove('hidden');
+
+  if (lessonCache[id]) { renderLessonModal(lessonCache[id]); return; }
+  $('modal-content').innerHTML = '<div class="spinner"></div>';
+  try {
+    const res = await authFetch(`/web/lesson?id=${encodeURIComponent(id)}`);
+    if (!res) return; // session expired
+    if (!res.ok) throw new Error();
+    const lesson = await res.json();
+    lessonCache[id] = lesson;
+    if (currentLessonId === id) renderLessonModal(lesson); // ignore if another was opened meanwhile
+  } catch (e) {
+    $('modal-content').innerHTML = `<div class="modal__state">${I18N.t('lessons.error')}</div>`;
+  }
+}
+
+/** Flip completion everywhere it shows: modal button, module donut, row badge, caches. */
+function setLessonCompleted(id, completed) {
+  if (lessonCache[id]) lessonCache[id].completed = completed;
+  for (const mod of lessonModules) {
+    const l = mod.lessons.find((x) => x.id === id);
+    if (!l || l.completed === completed) continue;
+    l.completed = completed;
+    mod.completed += completed ? 1 : -1;
+  }
+  renderLessons();
+  renderCompleteButton(completed);
+  // Keep the SWR cache in step — otherwise a reload paints the stale state first.
+  cacheLessons({ modules: lessonModules });
+}
+
+async function toggleLessonComplete() {
+  const id = currentLessonId;
+  const lesson = id && lessonCache[id];
+  if (!lesson) return;
+  const next = !lesson.completed;
+
+  setLessonCompleted(id, next); // optimistic — the donut moves immediately
+  try {
+    const res = next
+      ? await authFetch('/web/progress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lessonId: id }),
+        })
+      : await authFetch(`/web/progress?lessonId=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!res) return; // session expired
+    if (!res.ok) throw new Error();
+    toast(I18N.t(next ? 'lessons.doneToast' : 'lessons.undoneToast'));
+  } catch (e) {
+    setLessonCompleted(id, !next); // roll back — the server never took it
+    toast(I18N.t('lessons.saveError'));
+  }
+}
+
+// ── View switching (Feed | Estudos) ───────────────────────────────────
+function viewUrl(view) {
+  return view === 'lessons' ? '?view=lessons' : location.pathname;
+}
+function setView(view, fromPop) {
+  currentView = view;
+  $('view-feed').classList.toggle('hidden', view !== 'feed');
+  $('view-lessons').classList.toggle('hidden', view !== 'lessons');
+  document.querySelectorAll('#viewbar button').forEach((b) =>
+    b.classList.toggle('active', b.dataset.view === view));
+  $('brand-title').textContent = I18N.t(view === 'lessons' ? 'view.lessons' : 'view.feed');
+  if (!fromPop) history.pushState({ view }, '', viewUrl(view));
+  if (view === 'lessons' && !lessonModules.length) loadLessons();
+}
+
+/**
+ * Make the UI match the URL. Single entry point for boot and for the back button, so
+ * the view and the modal can never disagree with the address bar.
+ */
+function syncFromUrl() {
+  const params = new URLSearchParams(location.search);
+  const post = params.get('post');
+  const lesson = params.get('lesson');
+
+  setView(params.get('view') === 'lessons' || lesson ? 'lessons' : 'feed', true);
+
+  if (post) { openPost(post, true); return; }
+  if (lesson) { openLesson(lesson, true); return; }
+  closeModal(true);
 }
 
 // ── Preview (localhost, no real session) ──────────────────────────────
@@ -953,6 +1264,9 @@ $('ios-banner-close').addEventListener('click', () => {
 $('modal-close').addEventListener('click', () => closeModal());
 $('modal-backdrop').addEventListener('click', () => closeModal());
 $('modal-share').addEventListener('click', shareCurrentPost);
+$('modal-complete').addEventListener('click', toggleLessonComplete);
+document.querySelectorAll('#viewbar button').forEach((b) =>
+  b.addEventListener('click', () => { if (b.dataset.view !== currentView) setView(b.dataset.view); }));
 // Post body images → fullscreen viewer
 $('modal-content').addEventListener('click', (e) => {
   const img = e.target.closest('img');
@@ -965,10 +1279,8 @@ document.addEventListener('keydown', (e) => {
   if (!$('lightbox').classList.contains('hidden')) { closeLightbox(); return; }
   closeModal(); closeMenu();
 });
-window.addEventListener('popstate', () => {
-  const id = new URLSearchParams(location.search).get('post');
-  if (id) openPost(id, true); else closeModal(true);
-});
+// Back/forward: re-derive the whole UI from the URL, so view + modal stay in step.
+window.addEventListener('popstate', syncFromUrl);
 document.querySelectorAll('#login-lang button').forEach((b) =>
   b.addEventListener('click', () => onLangChange(b.dataset.lang)));
 $('lang-banner-close').addEventListener('click', () => {
