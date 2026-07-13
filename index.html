@@ -5,7 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Crypto Bros</title>
     <meta name="description" content="Feed do Crypto Bros — mercado, estudos e trade cripto." />
-    <link rel="icon" type="image/png" href="./favicon.png?v=6" />
+    <!-- Link previews (Open Graph + Twitter) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Crypto Bros" />
+    <meta property="og:title" content="Crypto Bros" />
+    <meta property="og:description" content="Feed do Crypto Bros — mercado, estudos e trade cripto." />
+    <meta property="og:url" content="https://crypto-bros.com/" />
+    <meta property="og:image" content="https://crypto-bros.com/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Crypto Bros" />
+    <meta name="twitter:description" content="Feed do Crypto Bros — mercado, estudos e trade cripto." />
+    <meta name="twitter:image" content="https://crypto-bros.com/og.png" />
+    <link rel="icon" type="image/png" href="./favicon.png?v=7" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="theme-color" content="#000000" />
@@ -15,7 +29,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=6" />
+    <link rel="stylesheet" href="./styles.css?v=7" />
     <script>
       (function () {
         try {
@@ -29,6 +43,14 @@
     </script>
   </head>
   <body>
+    <!-- Apple-style locale suggestion banner (shown when the visitor's country
+         speaks a different language than the one currently selected) -->
+    <div id="lang-banner" class="lang-banner hidden">
+      <span id="lang-banner-text" class="lang-banner__text"></span>
+      <button id="lang-banner-switch" class="lang-banner__btn"></button>
+      <button id="lang-banner-close" class="lang-banner__close" aria-label="Fechar">✕</button>
+    </div>
+
     <!-- Login -->
     <section id="login" class="login hidden">
       <img class="login__logo" src="./icon.png" alt="Crypto Bros" />
@@ -43,6 +65,10 @@
       </div>
       <p class="login__hint" id="login-hint"></p>
       <p id="login-error" class="login__error hidden"></p>
+      <div class="menu__seg login__lang" id="login-lang">
+        <button data-lang="pt">Português BR</button>
+        <button data-lang="en">Inglês</button>
+      </div>
     </section>
 
     <!-- Feed -->
@@ -116,7 +142,7 @@
     </div>
 
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script src="./i18n.js?v=6" defer></script>
-    <script src="./app.js?v=6" defer></script>
+    <script src="./i18n.js?v=7" defer></script>
+    <script src="./app.js?v=7" defer></script>
   </body>
 </html>

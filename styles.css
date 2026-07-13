@@ -100,6 +100,26 @@ body {
 .g-real iframe { width: 100% !important; height: 100% !important; }
 .login__error { color: var(--error); font-size: 13px; }
 
+.login__lang { width: 300px; max-width: 100%; margin-top: 4px; }
+
+/* Locale suggestion banner (Apple-style, top of the page) */
+.lang-banner {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap;
+  padding: 10px 44px 10px 20px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  font-size: 13px; color: var(--text-secondary); text-align: center;
+}
+.lang-banner__text { color: var(--text); }
+.lang-banner__btn {
+  border: none; background: var(--accent); color: #fff; font-family: var(--font);
+  font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: var(--radius-pill); cursor: pointer;
+}
+.lang-banner__close {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  border: none; background: none; color: var(--text-tertiary); font-size: 14px; cursor: pointer; padding: 6px;
+}
+
 /* ── Top bar ────────────────────────────────────────────────────────── */
 .topbar {
   position: sticky; top: 0; z-index: 10;

@@ -83,15 +83,45 @@ function applyStaticText() {
   $('login-hint').textContent = I18N.t('login.hint');
   $('g-fake-label').textContent = I18N.t('login.google');
   $('brand-title').textContent = I18N.t('header.title');
+  document.querySelectorAll('#login-lang button').forEach((b) =>
+    b.classList.toggle('active', b.dataset.lang === I18N.lang));
   renderMenuState();
 }
 function onLangChange(lang) {
   if (lang === I18N.lang) return;
   I18N.set(lang);
+  hideLangBanner(); // an explicit choice settles the locale question
   applyStaticText();
   renderMarket();
+  if ($('app').classList.contains('hidden')) return; // still on the login screen
   if (isPreview()) { renderTags(); renderFeed(); return; }
   loadFeed();
+}
+
+// ── Locale suggestion (Cloudflare edge geo → Apple-style banner) ───────
+const PT_COUNTRIES = new Set(['BR', 'PT', 'AO', 'MZ', 'CV', 'GW', 'ST', 'TL']);
+const LANG_BANNER_KEY = 'cb-lang-banner-dismissed';
+
+function hideLangBanner() { $('lang-banner').classList.add('hidden'); }
+function showLangBanner(lang) {
+  $('lang-banner-text').textContent = I18N.tIn(lang, 'langBanner.text');
+  const btn = $('lang-banner-switch');
+  btn.textContent = I18N.tIn(lang, 'langBanner.switch');
+  btn.onclick = () => onLangChange(lang);
+  $('lang-banner').classList.remove('hidden');
+}
+/** Default is the browser language; if the visitor's country speaks another one, offer to switch. */
+async function maybeSuggestLanguage() {
+  // Skip once the user has chosen a language explicitly, or dismissed the banner.
+  if (localStorage.getItem('cb-lang') || localStorage.getItem(LANG_BANNER_KEY)) return;
+  let country;
+  try {
+    const res = await fetch(`${CONFIG.workerBase}/web/geo`);
+    country = (await res.json()).country;
+  } catch (e) { return; }
+  if (!country) return;
+  const suggested = PT_COUNTRIES.has(country) ? 'pt' : 'en';
+  if (suggested !== I18N.lang) showLangBanner(suggested);
 }
 
 // ── Auth + avatar ─────────────────────────────────────────────────────
@@ -937,7 +967,14 @@ window.addEventListener('popstate', () => {
   const id = new URLSearchParams(location.search).get('post');
   if (id) openPost(id, true); else closeModal(true);
 });
+document.querySelectorAll('#login-lang button').forEach((b) =>
+  b.addEventListener('click', () => onLangChange(b.dataset.lang)));
+$('lang-banner-close').addEventListener('click', () => {
+  localStorage.setItem(LANG_BANNER_KEY, '1');
+  hideLangBanner();
+});
 // Register the service worker for app-shell/asset caching (push permission is separate).
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 if (getSession() || isPreview()) { showApp(); } else { showLogin(); }
+maybeSuggestLanguage();

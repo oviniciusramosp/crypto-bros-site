@@ -8,6 +8,8 @@ const STRINGS = {
     'login.hint': 'Primeiro acesso? Sua conta é criada automaticamente ao entrar com o Google.',
     'login.error': 'Não foi possível entrar. Tente novamente.',
     'login.google': 'Continuar com o Google',
+    'langBanner.text': 'Este site está disponível em Português.',
+    'langBanner.switch': 'Mudar para Português',
     'filters.all': 'Tudo',
     'empty.message': 'Nada Encontrado',
     'empty.hint': 'Tente outro filtro ou volte mais tarde.',
@@ -54,6 +56,8 @@ const STRINGS = {
     'login.hint': 'First time? Your account is created automatically when you sign in with Google.',
     'login.error': "Couldn't sign in. Please try again.",
     'login.google': 'Continue with Google',
+    'langBanner.text': 'This site is available in English.',
+    'langBanner.switch': 'Switch to English',
     'filters.all': 'All',
     'empty.message': 'Nothing Found',
     'empty.hint': 'Try another filter or come back later.',
@@ -124,6 +128,11 @@ const I18N = {
     let s = (STRINGS[currentLang] && STRINGS[currentLang][key]) || STRINGS.pt[key] || key;
     if (vars) for (const k in vars) s = s.replace('{' + k + '}', vars[k]);
     return s;
+  },
+  /** Translate into an explicit language (used by the locale-suggestion banner). */
+  tIn(lang, key) {
+    const table = STRINGS[lang] || STRINGS.pt;
+    return table[key] || STRINGS.pt[key] || key;
   },
   /** Relative date like the app: minutes, hours, then localized "d MMM". */
   formatDate(iso) {
