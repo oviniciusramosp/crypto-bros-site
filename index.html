@@ -19,7 +19,7 @@
     <meta name="twitter:title" content="Crypto Bros" />
     <meta name="twitter:description" content="Feed do Crypto Bros — mercado, estudos e trade cripto." />
     <meta name="twitter:image" content="https://crypto-bros.com/og.png" />
-    <link rel="icon" type="image/png" href="./favicon.png?v=13" />
+    <link rel="icon" type="image/png" href="./favicon.png?v=14" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="theme-color" content="#000000" />
@@ -29,7 +29,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=13" />
+    <link rel="stylesheet" href="./styles.css?v=14" />
     <script>
       (function () {
         try {
@@ -80,7 +80,12 @@
         <button id="ios-banner-close" class="ios-banner__close" aria-label="Fechar">✕</button>
       </div>
       <header class="topbar">
-        <span class="topbar__brand"><img src="./icon.png" alt="" /><span id="brand-title">Feed</span></span>
+        <span class="topbar__brand"><img src="./icon.png" alt="" /><span id="brand-title">Crypto Bros</span></span>
+        <!-- Feed | Estudos. Reuses .menu__seg so it matches the app's SegmentedControl. -->
+        <nav id="viewbar" class="menu__seg viewbar">
+          <button data-view="feed" id="viewbar-feed"></button>
+          <button data-view="lessons" id="viewbar-lessons"></button>
+        </nav>
         <div class="user">
           <button id="user-btn" class="user-btn" aria-label="Menu" aria-haspopup="true"></button>
           <div id="user-menu" class="menu hidden" role="menu">
@@ -113,12 +118,6 @@
       </header>
 
       <div class="feed">
-        <!-- Feed | Estudos. Reuses .menu__seg so it matches the app's SegmentedControl. -->
-        <nav id="viewbar" class="menu__seg viewbar">
-          <button data-view="feed" id="viewbar-feed"></button>
-          <button data-view="lessons" id="viewbar-lessons"></button>
-        </nav>
-
         <div id="view-feed">
           <section id="marquee" class="marquee">
             <div class="marquee__viewport"><div class="marquee__track" id="marquee-track"></div></div>
@@ -140,13 +139,15 @@
       <div class="modal__backdrop" id="modal-backdrop"></div>
       <div class="modal__panel">
         <button class="modal__close" id="modal-close" aria-label="Fechar">✕</button>
-        <button class="modal__share" id="modal-share" aria-label="Compartilhar">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
-        </button>
-        <!-- Lessons only: mark completed. Takes the share button's slot (lessons have no /p/ page). -->
-        <button class="modal__complete hidden" id="modal-complete">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-        </button>
+        <div class="modal__actions">
+          <!-- Lessons only: mark completed. Sits beside share, not instead of it. -->
+          <button class="modal__action modal__complete hidden" id="modal-complete">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+          </button>
+          <button class="modal__action modal__share" id="modal-share" aria-label="Compartilhar">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+          </button>
+        </div>
         <div class="modal__scroll" id="modal-content"></div>
       </div>
     </div>
@@ -158,7 +159,7 @@
     </div>
 
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script src="./i18n.js?v=13" defer></script>
-    <script src="./app.js?v=13" defer></script>
+    <script src="./i18n.js?v=14" defer></script>
+    <script src="./app.js?v=14" defer></script>
   </body>
 </html>

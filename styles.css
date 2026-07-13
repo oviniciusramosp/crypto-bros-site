@@ -16,10 +16,11 @@
   --success: #22C55E;
   --error: #EF4444;
   --shadow-sm: 0px 2px 8px rgba(0, 0, 0, 0.3);
-  /* SegmentedControl (app parity — src/components/ui/SegmentedControl.tsx) */
+  /* SegmentedControl — the app builds the selected pill from getNotionSelectedColors('default'),
+     which is the ACCENT, not a grey. These once held the grey "default TAG" values instead. */
   --seg-track: rgba(255, 255, 255, 0.05);
-  --seg-active: rgba(255, 255, 255, 0.13);
-  --seg-active-text: rgba(255, 255, 255, 0.81);
+  --seg-active: rgba(241, 91, 36, 0.25);
+  --seg-active-text: #F15B24;
   /* Lesson progress donut (app parity — ModuleProgressDonut.tsx) */
   --donut-track: rgba(255, 255, 255, 0.08);
   /* Bookmark card (app parity — BookmarkBlock.tsx) */
@@ -62,8 +63,8 @@
   --cat-ATH: #F59E0B;
   --cat-Mais: #71717A;
   --seg-track: rgba(0, 0, 0, 0.03);
-  --seg-active: rgba(227, 226, 224, 0.5);
-  --seg-active-text: #37352F;
+  --seg-active: rgba(241, 91, 36, 0.15);
+  --seg-active-text: #F15B24;
   --donut-track: rgba(0, 0, 0, 0.06);
   --bookmark-bg: rgba(0, 0, 0, 0.03);
 }
@@ -137,10 +138,23 @@ body {
   border-bottom: 1px solid var(--border);
 }
 .topbar__brand {
-  display: flex; align-items: center; gap: var(--space-sm);
-  font-weight: 700; font-size: 20px; letter-spacing: -0.3px; margin-right: auto;
+  display: flex; align-items: center; gap: var(--space-sm); min-width: 0;
+  flex: 1; /* brand and user each take a share, so the viewbar lands dead centre */
+  font-weight: 700; font-size: 20px; letter-spacing: -0.3px;
 }
-.topbar__brand img { width: 28px; height: 28px; border-radius: 7px; }
+.topbar__brand img { width: 28px; height: 28px; border-radius: 7px; flex: 0 0 auto; }
+.topbar__brand span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar .viewbar { flex: 0 0 auto; margin: 0; }
+.topbar .user { flex: 1; display: flex; justify-content: flex-end; }
+.viewbar button svg { width: 14px; height: 14px; flex: 0 0 auto; }
+/* Narrow screens: the wordmark is the first thing to go — the logo still identifies us,
+   and the view switcher is what people actually need to reach. */
+@media (max-width: 560px) {
+  .topbar__brand span { display: none; }
+  .topbar__brand { flex: 0 0 auto; }
+  .topbar .user { flex: 1; }
+  .topbar .viewbar { margin-left: auto; }
+}
 .icon-btn {
   width: 36px; height: 36px; border: none; border-radius: var(--radius-pill);
   background: var(--bg-tertiary); color: var(--text-secondary); font-size: 16px;
@@ -293,15 +307,8 @@ body {
   color: var(--accent); font-size: 12px; font-weight: 600;
 }
 
-/* Mark-completed button. Sits in the share button's slot (lessons have no /p/ page). */
-.modal__complete {
-  position: absolute; top: 16px; right: 16px; z-index: 2; width: 36px; height: 36px;
-  border-radius: var(--radius-pill); border: none; cursor: pointer;
-  background: rgba(0, 0, 0, 0.5); color: #fff; backdrop-filter: blur(8px);
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: background 0.2s;
-}
 .modal__complete.is-done { background: var(--success); backdrop-filter: none; }
+.modal__complete.is-done:hover { background: color-mix(in srgb, var(--success) 85%, #000); }
 
 /* Post detail modal — centered card (like the cryptobro-app reference) */
 .modal {
@@ -320,16 +327,19 @@ body {
   position: absolute; top: 16px; left: 16px; z-index: 2; width: 36px; height: 36px; border-radius: var(--radius-pill);
   border: none; background: rgba(0,0,0,0.5); color: #fff; font-size: 15px; cursor: pointer; backdrop-filter: blur(8px);
 }
-.modal__share {
-  position: absolute; top: 16px; right: 16px; z-index: 2; width: 36px; height: 36px; border-radius: var(--radius-pill);
+.modal__actions { position: absolute; top: 16px; right: 16px; z-index: 2; display: flex; gap: 8px; }
+.modal__action {
+  width: 36px; height: 36px; border-radius: var(--radius-pill);
   border: none; background: rgba(0,0,0,0.5); color: #fff; cursor: pointer; backdrop-filter: blur(8px);
   display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
 }
+.modal__action:hover { background: rgba(0,0,0,0.7); }
 .modal__scroll { overflow-y: auto; flex: 1; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 /* The close/share/complete buttons float over the cover image. With no cover the body
    is the first child, so it would slide under them — push it clear of the 16+36px they
    occupy. Applies to cover-less posts too, which had the same overlap. */
-.modal__scroll > .modal__body:first-child { padding-top: 64px; }
+.modal__scroll > .modal__body:first-child { padding-top: 64px; } /* clears the floating buttons */
 
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translate(-50%, 12px); z-index: 200;
@@ -542,7 +552,14 @@ body {
 .excerpt-clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-secondary); font-size: 15px; line-height: 20px; }
 
 .card__more { display: flex; justify-content: flex-end; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--actions-border); }
-.card__more button { display: flex; align-items: center; gap: 4px; background: none; border: none; color: var(--accent); font-family: var(--font); font-size: 15px; cursor: pointer; }
+.card__more button {
+  display: flex; align-items: center; gap: 4px; padding: 6px 12px; margin: -6px -12px 0 0;
+  background: none; border: none; border-radius: var(--radius-pill);
+  color: var(--accent); font-family: var(--font); font-size: 15px; font-weight: 500; cursor: pointer;
+  transition: background 0.15s, gap 0.15s;
+}
+.card__more button:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); gap: 7px; }
+.card__more button:active { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 
 /* ── States ─────────────────────────────────────────────────────────── */
 .state { text-align: center; color: var(--text-secondary); padding: 48px var(--pad-screen); font-size: 14px; }
