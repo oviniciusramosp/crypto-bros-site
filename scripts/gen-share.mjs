@@ -61,13 +61,13 @@ for (const [i, p] of posts.entries()) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${esc(p.title)} — Crypto Bros</title>
 <meta name="description" content="${esc(desc)}">
-<link rel="canonical" href="${SITE}/p/${p.id}">
+<link rel="canonical" href="${SITE}/p/${p.id}/">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Crypto Bros">
 <meta property="og:locale" content="${isEn ? 'en_US' : 'pt_BR'}">
 <meta property="og:title" content="${esc(p.title)}">
 <meta property="og:description" content="${esc(desc)}">
-<meta property="og:url" content="${SITE}/p/${p.id}">
+<meta property="og:url" content="${SITE}/p/${p.id}/">
 <meta property="og:image" content="${image}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${esc(p.title)}">

@@ -740,7 +740,7 @@ async function shareCurrentPost() {
   if (!currentPostId) return;
   // Share the pre-generated /p/<id> page: it carries the post's OG meta for crawlers
   // and redirects into the app (?post=<id>) for humans.
-  const url = `${location.origin}/p/${encodeURIComponent(currentPostId)}`;
+  const url = `${location.origin}/p/${encodeURIComponent(currentPostId)}/`;
   try {
     if (navigator.share) { await navigator.share({ url }); return; }
   } catch (e) { return; } // user cancelled native share
