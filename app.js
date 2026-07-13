@@ -511,12 +511,18 @@ const TAG_LABELS = {
   'NFT': { pt: 'NFT', en: 'NFT' },
 };
 function tagLabel(name) { const m = TAG_LABELS[name]; return m ? m[I18N.lang] || m.pt : name; }
-// Tab icons, mirroring the app's tab bar: a Bitcoin glyph for the Feed (the app uses a
-// custom BTC icon font there) and Ionicons `book` for Estudos.
-const FEED_ICON =
-  '<svg viewBox="0 0 512 512" fill="currentColor" aria-hidden="true"><path d="M405.75 233.51c22.71-24.25 27.94-49.61 20.35-81.42-10.53-44.09-47.82-63.4-97.35-70.22V16h-42v62.79c-10.55 0-21.38.21-32.14.42V16h-42v65.68c-8.73.18-17.3.35-25.67.35v-.21H128v46s31.85-.6 31.32 0a16.32 16.32 0 0 1 16.72 13.9v75.6a26.86 26.86 0 0 1 3.52.25h-3.55v105.85c-1 7.19-5.24 18.5-21 18.51.57.5-31.34 0-31.34 0L96 397.25h56.79c10.58 0 21 .17 31.16.24v66.28h42v-65.54c11.54.23 22.69.32 33.61.31l-.11 65.23h42v-66.13c70.65-4 120.13-21.81 126.29-88.13 4.97-53.38-20.22-77.19-62-86.71zM225.78 128.61c21.65 0 89.67-6.9 89.67 38.42 0 43.45-68 38.39-89.67 38.39zm0 218.3V264.5c26 0 107.52-7.46 107.53 41.19.02 46.66-81.5 41.2-107.53 41.2z"/></svg>';
+// Tab icons, mirroring the app's tab bar.
+//
+// Feed uses the app's OWN icon font (cryptobros-icons.ttf, copied into assets/fonts) —
+// the CSS swaps btc-lg-outline → btc-lg on the selected tab, exactly like the app. Not a
+// lookalike SVG: the same glyphs.
+const FEED_ICON = '<i class="cbi cbi--btc" aria-hidden="true"></i>';
+// Estudos: Ionicons `book-outline`, and `book` (filled) when selected — the app's pair.
 const LESSONS_ICON =
-  '<svg viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M256 160c16-63.16 76.43-95.41 208-96a15.94 15.94 0 0 1 16 16v288a16 16 0 0 1-16 16c-128 0-177.45 25.81-208 64-30.37-38-80-64-208-64-9.88 0-16-8.05-16-17.93V80a15.94 15.94 0 0 1 16-16c131.57.59 192 32.84 208 96zM256 160v288"/></svg>';
+  '<svg class="ion ion--book" viewBox="0 0 512 512" aria-hidden="true">' +
+  '<path class="ion__outline" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" d="M256 160c16-63.16 76.43-95.41 208-96a15.94 15.94 0 0 1 16 16v288a16 16 0 0 1-16 16c-128 0-177.45 25.81-208 64-30.37-38-80-64-208-64-9.88 0-16-8.05-16-17.93V80a15.94 15.94 0 0 1 16-16c131.57.59 192 32.84 208 96zM256 160v288"/>' +
+  '<path class="ion__solid" fill="currentColor" d="M202.24 74C166.11 56.75 115.61 48.3 48 48a31.36 31.36 0 0 0-17.92 5.33A32 32 0 0 0 16 79.9V366c0 19.34 13.76 33.93 32 33.93 71.07 0 142.36 6.64 185.06 47a4.11 4.11 0 0 0 6.94-3V106.82a15.89 15.89 0 0 0-5.46-12A143 143 0 0 0 202.24 74zM481.92 53.3A31.33 31.33 0 0 0 464 48c-67.61.3-118.11 8.71-154.24 26a143.31 143.31 0 0 0-32.31 20.78 15.93 15.93 0 0 0-5.45 12v337.13a3.93 3.93 0 0 0 6.68 2.81c25.67-25.5 70.4-46.81 185.36-46.81a32 32 0 0 0 32-32v-288a32 32 0 0 0-14.12-26.61z"/>' +
+  '</svg>';
 
 // Ionicons "apps" grid — used on the All/Tudo pill (app parity).
 const APPS_ICON = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>';

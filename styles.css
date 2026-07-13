@@ -69,6 +69,19 @@
   --bookmark-bg: rgba(0, 0, 0, 0.03);
 }
 
+/* The app's own icon font (assets/fonts/cryptobros-icons.ttf, generated with IcoMoon).
+   Glyphs live in the Private Use Area — the Feed tab uses btc-lg-outline (U+F003) when
+   idle and btc-lg (U+F002) when selected. Same file, same glyphs, so the web icon is not
+   an approximation of the app's: it is the app's. */
+@font-face {
+  font-family: 'cryptobros-icons';
+  src: url('./assets/fonts/cryptobros-icons.ttf') format('truetype');
+  font-display: block;
+}
+.cbi { font-family: 'cryptobros-icons'; font-style: normal; font-weight: normal; line-height: 1; speak: never; }
+.cbi--btc::before { content: '\f003'; }                            /* btc-lg-outline */
+.viewbar button.active .cbi--btc::before { content: '\f002'; }     /* btc-lg (filled) */
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { color-scheme: dark; }
 :root[data-theme='light'] { color-scheme: light; }
@@ -147,6 +160,11 @@ body {
 .topbar .viewbar { flex: 0 0 auto; margin: 0; }
 .topbar .user { flex: 1; display: flex; justify-content: flex-end; }
 .viewbar button svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.viewbar button .cbi { font-size: 14px; flex: 0 0 auto; }
+/* Ionicons pairs: outline while idle, solid once selected — the app's tab-bar behaviour. */
+.ion--book .ion__solid { display: none; }
+.viewbar button.active .ion--book .ion__outline { display: none; }
+.viewbar button.active .ion--book .ion__solid { display: inline; }
 /* Narrow screens: the wordmark is the first thing to go — the logo still identifies us,
    and the view switcher is what people actually need to reach. */
 @media (max-width: 560px) {
@@ -210,8 +228,9 @@ body {
 
 /* History (Mais antigos) */
 .history {
+  position: relative;
   margin: 20px var(--pad-screen) 0;
-  background: var(--surface); border: 1px solid var(--inner-border);
+  background: var(--surface);
   border-radius: var(--radius-card); overflow: hidden;
 }
 .history__header { padding: 20px var(--pad-screen) 16px; font-size: 20px; line-height: 25px; font-weight: 600; border-bottom: 1px solid var(--border); }
@@ -235,6 +254,19 @@ body {
 .history__pager button { width: 44px; height: 44px; border: none; background: none; cursor: pointer; color: var(--accent); display: inline-flex; align-items: center; justify-content: center; }
 .history__pager button:disabled { color: var(--text-tertiary); opacity: 0.3; cursor: default; }
 
+/* Card inner border — the app's Card.tsx does NOT put a border on the card. It lays a 1px
+   overlay (absoluteFill, zIndex 10, pointerEvents none) OVER the content, so the
+   semi-transparent white line falls on top of the cover image and tints its edge.
+
+   A CSS `border` cannot do that: with overflow:hidden the image is clipped INSIDE the
+   border, so the line ends up drawn against the page background instead — and on light
+   theme rgba(255,255,255,.5) over #F2F2F2 reads as a near-solid white frame. Hence the
+   pseudo-element. */
+.card::after, .module::after, .history::after, .modal__panel::after {
+  content: ''; position: absolute; inset: 0; z-index: 10; pointer-events: none;
+  border: 1px solid var(--inner-border); border-radius: inherit;
+}
+
 /* ── Estudos / Lessons ────────────────────────────────────────────────────
    Mirrors the app's Estudos tab: one card per module (ModuleSection.tsx), a
    progress DONUT with a completed/total fraction (ModuleProgressDonut.tsx) —
@@ -243,8 +275,9 @@ body {
 .viewbar { margin: 20px var(--pad-screen) 0; }
 
 .module {
+  position: relative;
   margin: 20px var(--pad-screen) 0;
-  background: var(--surface); border: 1px solid var(--inner-border);
+  background: var(--surface);
   border-radius: var(--radius-card); overflow: hidden;
 }
 .module__header {
@@ -318,7 +351,7 @@ body {
 .modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.65); backdrop-filter: blur(2px); }
 .modal__panel {
   position: relative; width: 100%; max-width: min(95vw, 680px); max-height: 90vh;
-  background: var(--surface); border: 1px solid var(--inner-border);
+  background: var(--surface);
   border-radius: var(--radius-card); overflow: hidden; display: flex; flex-direction: column;
   box-shadow: 0 24px 64px rgba(0,0,0,0.5); animation: modal-in 0.2s ease;
 }
@@ -515,8 +548,9 @@ body {
 
 /* ── Post card ──────────────────────────────────────────────────────── */
 .card {
+  position: relative;
   margin: 20px var(--pad-screen) 0;
-  background: var(--surface); border: 1px solid var(--inner-border);
+  background: var(--surface);
   border-radius: var(--radius-card); overflow: hidden;
 }
 .card__cover { display: block; width: 100%; aspect-ratio: 14 / 9; object-fit: cover; background: var(--bg-tertiary); }
