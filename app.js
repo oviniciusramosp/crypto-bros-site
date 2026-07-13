@@ -91,11 +91,28 @@ function setThemePref(pref) {
   applyTheme();
   renderMarket();
   renderMenuState();
+  repaintThemedContent();
 }
 if (window.matchMedia) {
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    if (themePref() === 'system') { applyTheme(); renderMarket(); }
+    if (themePref() !== 'system') return;
+    applyTheme();
+    renderMarket();
+    repaintThemedContent();
   });
+}
+
+/**
+ * Notion colours (tag pills, coloured text, highlights) are written as INLINE styles, so
+ * flipping data-theme does not recolour them the way a CSS var would — the old theme's
+ * hexes stay baked into the DOM until a reload. Re-render everything that carries one.
+ */
+function repaintThemedContent() {
+  if ($('app').classList.contains('hidden')) return; // still on the login screen
+  if (feedTags.length) renderTags();
+  if (feedPosts.length) renderFeed();
+  if (currentPostId && postCache[currentPostId]) renderPostModal(postCache[currentPostId]);
+  else if (currentLessonId && lessonCache[currentLessonId]) renderLessonModal(lessonCache[currentLessonId]);
 }
 
 // ── i18n glue ─────────────────────────────────────────────────────────
@@ -400,11 +417,36 @@ async function loadMarket() {
     .then((d) => { if (typeof d.value === 'number') { marketData.mvrv = d.value; renderMarket(); } }).catch(() => {});
 }
 
-// ── Tag filter ────────────────────────────────────────────────────────
-const NOTION_TAG_HEX = {
-  default: '#F15B24', gray: '#9B9B9B', brown: '#BA856F', orange: '#FFA344', yellow: '#FFDC49',
-  green: '#6DB87E', blue: '#529CCA', purple: '#A475C2', pink: '#E255A1', red: '#FF7369',
+// ── Notion colors ─────────────────────────────────────────────────────
+//
+// Mirrors NOTION_TEXT_COLORS in the app (src/theme/notionColors.ts). Every Notion color
+// has a light AND a dark value: the dark ones are deliberately brighter so they read on
+// black, which makes them washed out and low-contrast on a white background. This map
+// used to hold only the dark set, so light mode rendered coloured text, highlights and
+// the selected tag pill in dark-mode hexes.
+//
+// `default` is the accent (not the app's text default) because the only thing that asks
+// for it is the "all" tag pill — rich text skips colour === 'default' entirely.
+const NOTION_COLORS = {
+  default: { light: '#F15B24', dark: '#F15B24' },
+  gray: { light: '#787774', dark: '#9B9B9B' },
+  brown: { light: '#9F6B53', dark: '#BA856F' },
+  orange: { light: '#D9730D', dark: '#FFA344' },
+  yellow: { light: '#CB912F', dark: '#FFDC49' },
+  green: { light: '#448361', dark: '#6DB87E' },
+  blue: { light: '#337EA9', dark: '#529CCA' },
+  purple: { light: '#9065B0', dark: '#A475C2' },
+  pink: { light: '#C14C8A', dark: '#E255A1' },
+  red: { light: '#D44C47', dark: '#FF7369' },
 };
+
+const isDark = () => document.documentElement.getAttribute('data-theme') !== 'light';
+
+/** Resolve a Notion colour name to a hex for the CURRENT theme. */
+function notionHex(color) {
+  const pair = NOTION_COLORS[color] || NOTION_COLORS.default;
+  return isDark() ? pair.dark : pair.light;
+}
 // Category tag labels hardcoded per language (keyed by the PT Notion value, like the app's feed.json).
 const TAG_LABELS = {
   'Notícias': { pt: 'Notícias', en: 'News' },
@@ -421,7 +463,7 @@ function tagLabel(name) { const m = TAG_LABELS[name]; return m ? m[I18N.lang] ||
 const APPS_ICON = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>';
 function renderTags() {
   const bar = $('tagbar');
-  const dark = document.documentElement.getAttribute('data-theme') !== 'light';
+  const dark = isDark();
   const pills = [{ name: 'all', label: I18N.t('filters.all'), color: 'default', icon: APPS_ICON }]
     .concat(feedTags.map((t) => ({ name: t.name, label: tagLabel(t.name), color: t.color })));
   bar.replaceChildren();
@@ -430,7 +472,9 @@ function renderTags() {
     btn.innerHTML = (p.icon || '') + `<span>${escapeHtml(p.label)}</span>`;
     if (selectedTag === p.name) {
       btn.classList.add('selected');
-      const hex = NOTION_TAG_HEX[p.color] || NOTION_TAG_HEX.default;
+      // Matches the app's NOTION_SELECTED_COLORS exactly: rgba(hex, .15) on light,
+      // rgba(hex, .3) on dark — once the hex itself is the theme's.
+      const hex = notionHex(p.color);
       btn.style.background = rgba(hex, dark ? 0.3 : 0.15);
       btn.style.color = hex;
     }
@@ -452,11 +496,10 @@ function richText(arr) {
     if (a.underline) html = `<u>${html}</u>`;
     if (a.color && a.color !== 'default') {
       if (a.color.endsWith('_background')) {
-        const hex = NOTION_TAG_HEX[a.color.replace('_background', '')] || NOTION_TAG_HEX.default;
+        const hex = notionHex(a.color.replace('_background', ''));
         html = `<span style="background:${rgba(hex, 0.2)};padding:0 2px;border-radius:3px">${html}</span>`;
-      } else {
-        const hex = NOTION_TAG_HEX[a.color];
-        if (hex) html = `<span style="color:${hex}">${html}</span>`;
+      } else if (NOTION_COLORS[a.color]) {
+        html = `<span style="color:${notionHex(a.color)}">${html}</span>`;
       }
     }
     const href = t.href || (t.text && t.text.link && t.text.link.url);
