@@ -440,12 +440,64 @@ const NOTION_COLORS = {
   red: { light: '#D44C47', dark: '#FF7369' },
 };
 
+// Solid backgrounds for highlighted text AND callouts — NOTION_BACKGROUND_COLORS in the
+// app. These are their own colours, NOT a translucent wash of the text colour: green on
+// light is #EDF3EC, which no opacity of #448361 reproduces.
+const NOTION_BG_COLORS = {
+  gray: { light: '#F1F1EF', dark: '#454B4E' },
+  brown: { light: '#F4EEEE', dark: '#4D3D3A' },
+  orange: { light: '#FBECDD', dark: '#5C3C1E' },
+  yellow: { light: '#FBF3DB', dark: '#564328' },
+  green: { light: '#EDF3EC', dark: '#364A3F' },
+  blue: { light: '#E7F3F8', dark: '#264653' },
+  purple: { light: '#F4F0F7', dark: '#443D56' },
+  pink: { light: '#F9F0F3', dark: '#533245' },
+  red: { light: '#FDEBEB', dark: '#593938' },
+  default: { light: '#F7F6F3', dark: '#2F2F2F' }, // callout with no colour
+};
+
+// Callout TEXT — NOTION_CALLOUT_COLORS in the app. Mostly the text palette, but `default`
+// and `brown` (dark) have their own values.
+const NOTION_CALLOUT_TEXT = {
+  default: { light: '#37352F', dark: '#FFFFFF' },
+  gray: { light: '#787774', dark: '#9B9B9B' },
+  brown: { light: '#64473A', dark: '#D4B9A9' },
+  orange: { light: '#D9730D', dark: '#FFA344' },
+  yellow: { light: '#CB912F', dark: '#FFDC49' },
+  green: { light: '#448361', dark: '#6DB87E' },
+  blue: { light: '#337EA9', dark: '#529CCA' },
+  purple: { light: '#9065B0', dark: '#A475C2' },
+  pink: { light: '#C14C8A', dark: '#E255A1' },
+  red: { light: '#D44C47', dark: '#FF7369' },
+};
+
+// Tag pills use a DIFFERENT brown from body text — the app's NOTION_SELECTED_COLORS says
+// #64473A where NOTION_TEXT_COLORS says #9F6B53. Brown is the only colour that disagrees.
+const NOTION_PILL_OVERRIDES = { brown: { light: '#64473A', dark: '#BA856F' } };
+
 const isDark = () => document.documentElement.getAttribute('data-theme') !== 'light';
 
-/** Resolve a Notion colour name to a hex for the CURRENT theme. */
+const themed = (pair) => (isDark() ? pair.dark : pair.light);
+
+/** Notion colour name → text hex for the CURRENT theme. */
 function notionHex(color) {
-  const pair = NOTION_COLORS[color] || NOTION_COLORS.default;
-  return isDark() ? pair.dark : pair.light;
+  return themed(NOTION_COLORS[color] || NOTION_COLORS.default);
+}
+/** Notion colour name → tag-pill hex for the CURRENT theme. */
+function pillHex(color) {
+  return themed(NOTION_PILL_OVERRIDES[color] || NOTION_COLORS[color] || NOTION_COLORS.default);
+}
+/** Notion colour name (bare, no "_background") → solid background for the CURRENT theme. */
+function notionBgHex(color) {
+  return themed(NOTION_BG_COLORS[color] || NOTION_BG_COLORS.default);
+}
+/** Notion callout colour ("gray_background" | "default") → { bg, text } for the CURRENT theme. */
+function calloutColors(color) {
+  const key = (color || 'default').replace('_background', '');
+  return {
+    bg: notionBgHex(key),
+    text: themed(NOTION_CALLOUT_TEXT[key] || NOTION_CALLOUT_TEXT.default),
+  };
 }
 // Category tag labels hardcoded per language (keyed by the PT Notion value, like the app's feed.json).
 const TAG_LABELS = {
@@ -474,7 +526,7 @@ function renderTags() {
       btn.classList.add('selected');
       // Matches the app's NOTION_SELECTED_COLORS exactly: rgba(hex, .15) on light,
       // rgba(hex, .3) on dark — once the hex itself is the theme's.
-      const hex = notionHex(p.color);
+      const hex = pillHex(p.color);
       btn.style.background = rgba(hex, dark ? 0.3 : 0.15);
       btn.style.color = hex;
     }
@@ -496,8 +548,9 @@ function richText(arr) {
     if (a.underline) html = `<u>${html}</u>`;
     if (a.color && a.color !== 'default') {
       if (a.color.endsWith('_background')) {
-        const hex = notionHex(a.color.replace('_background', ''));
-        html = `<span style="background:${rgba(hex, 0.2)};padding:0 2px;border-radius:3px">${html}</span>`;
+        // Solid, like the app — a translucent wash of the text colour is a different colour.
+        const bg = notionBgHex(a.color.replace('_background', ''));
+        html = `<span style="background:${bg};padding:0 2px;border-radius:3px">${html}</span>`;
       } else if (NOTION_COLORS[a.color]) {
         html = `<span style="color:${notionHex(a.color)}">${html}</span>`;
       }
@@ -541,7 +594,10 @@ function renderBlocks(blocks, skipFirstDivider) {
       case 'quote': html += `<blockquote>${blockText(b)}${kids}</blockquote>`; break;
       case 'callout': {
         const icon = b.callout && b.callout.icon && b.callout.icon.emoji ? b.callout.icon.emoji : '💡';
-        html += `<div class="callout"><span class="callout-emoji">${escapeHtml(icon)}</span><div>${blockText(b)}${kids}</div></div>`;
+        // The callout's Notion colour drives bg AND text, per theme — the app's
+        // NOTION_CALLOUT_COLORS. This used to be a flat --bg-tertiary that ignored it.
+        const cc = calloutColors(b.callout && b.callout.color);
+        html += `<div class="callout" style="background:${cc.bg};color:${cc.text}"><span class="callout-emoji">${escapeHtml(icon)}</span><div>${blockText(b)}${kids}</div></div>`;
         break;
       }
       case 'toggle': html += `<details><summary>${blockText(b)}</summary>${kids}</details>`; break;

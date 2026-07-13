@@ -348,7 +348,8 @@ body {
 .modal__content li { margin: 4px 0; font-size: 15px; line-height: 24px; }
 .modal__content img { width: 100%; border-radius: 10px; margin: 12px 0; }
 .modal__content blockquote { border-left: 3px solid var(--accent); padding-left: 14px; margin: 12px 0; color: var(--text-secondary); }
-.modal__content .callout { display: flex; gap: 10px; background: var(--bg-tertiary); border-radius: 10px; padding: 14px; margin: 12px 0; }
+/* bg + text come from the block's Notion colour (set inline by calloutColors()). */
+.modal__content .callout { display: flex; gap: 10px; border-radius: 10px; padding: 14px; margin: 12px 0; }
 .modal__content code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg-tertiary); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
 .modal__content pre { background: var(--bg-tertiary); padding: 14px; border-radius: 10px; overflow-x: auto; margin: 12px 0; }
 .modal__content pre code { background: none; padding: 0; }
@@ -484,7 +485,7 @@ body {
 .card__preview li { margin: 2px 0; font-size: 14px; line-height: 22px; }
 .card__preview img { width: 100%; border-radius: 8px; margin: 8px 0; }
 .card__preview blockquote { border-left: 3px solid var(--border); padding-left: 12px; margin: 8px 0; color: var(--text-secondary); }
-.card__preview .callout { display: flex; gap: 8px; background: var(--bg-tertiary); border-radius: 8px; padding: 12px; margin: 8px 0; color: var(--text-secondary); }
+.card__preview .callout { display: flex; gap: 8px; border-radius: 8px; padding: 12px; margin: 8px 0; }
 .card__preview .callout-emoji { flex: 0 0 auto; }
 .card__preview code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg-tertiary); padding: 1px 4px; border-radius: 4px; font-size: 12px; }
 .card__preview pre { background: var(--bg-tertiary); padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; }

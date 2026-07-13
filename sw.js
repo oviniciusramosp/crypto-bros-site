@@ -2,7 +2,7 @@
 'use strict';
 
 const WORKER_BASE = 'https://crypto-bros-notion-proxy.crypto-bros.workers.dev';
-const CACHE = 'cb-cache-v1';
+const CACHE = 'cb-cache-v2';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil((async () => {
@@ -22,7 +22,15 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== self.location.origin) return; // Worker API + Google fonts/GIS → network
 
   if (req.mode === 'navigate') {
-    e.respondWith(fetch(req).catch(() => caches.match(req).then((r) => r || caches.match('/'))));
+    // `cache: 'no-cache'` is what makes this network-FIRST for real. A plain fetch() reads
+    // the browser's HTTP cache, and GitHub Pages serves index.html with max-age=600 — so
+    // for ten minutes after a deploy this handler happily replayed the OLD index.html,
+    // which then pulled the OLD ?v= assets. It forces a revalidation (304 when unchanged,
+    // so it stays cheap) instead of trusting the stale copy.
+    e.respondWith(
+      fetch(req.url, { cache: 'no-cache' })
+        .catch(() => caches.match(req).then((r) => r || caches.match('/'))),
+    );
     return;
   }
   e.respondWith((async () => {
