@@ -552,6 +552,18 @@ function renderTags() {
 function richText(arr) {
   if (!Array.isArray(arr)) return '';
   return arr.map((t) => {
+    // A Notion custom emoji arrives as a MENTION whose plain_text is the literal ":name:".
+    // Rendering plain_text — which is all this did — puts ":crypto-doge:" on the page.
+    const ce =
+      t.type === 'mention' && t.mention && t.mention.type === 'custom_emoji'
+        ? t.mention.custom_emoji
+        : null;
+    if (ce && ce.url) {
+      const img = `<img class="nb-emoji" src="${escapeHtml(ce.url)}" alt="${escapeHtml(t.plain_text || '')}" loading="lazy"/>`;
+      const link = t.href || (t.text && t.text.link && t.text.link.url);
+      return link ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener">${img}</a>` : img;
+    }
+
     let html = escapeHtml(t.plain_text || '');
     const a = t.annotations || {};
     if (a.code) html = `<code>${html}</code>`;
@@ -656,6 +668,18 @@ async function hydrateBookmarks(root) {
   );
 }
 
+/** Notion block icon → HTML. Custom emoji and uploaded images are images, not characters. */
+function calloutIcon(icon) {
+  if (!icon) return '💡';
+  const url =
+    (icon.type === 'custom_emoji' && icon.custom_emoji && icon.custom_emoji.url) ||
+    (icon.type === 'external' && icon.external && icon.external.url) ||
+    (icon.type === 'file' && icon.file && icon.file.url) ||
+    null;
+  if (url) return `<img class="nb-emoji nb-emoji--callout" src="${escapeHtml(url)}" alt="" loading="lazy"/>`;
+  return escapeHtml(icon.emoji || '💡');
+}
+
 function renderBlocks(blocks, skipFirstDivider) {
   let html = '', listType = null, listItems = '', firstDividerSkipped = false;
   const flushList = () => {
@@ -681,11 +705,14 @@ function renderBlocks(blocks, skipFirstDivider) {
       case 'heading_3': html += `<h3>${blockText(b)}</h3>`; break;
       case 'quote': html += `<blockquote>${blockText(b)}${kids}</blockquote>`; break;
       case 'callout': {
-        const icon = b.callout && b.callout.icon && b.callout.icon.emoji ? b.callout.icon.emoji : '💡';
+        // The icon is not always a unicode emoji. Falling back to 💡 for a custom emoji does
+        // not LOOK like a bug — it looks like a lightbulb — so 43 `:circle-info:` icons were
+        // silently replaced by one.
+        const icon = calloutIcon(b.callout && b.callout.icon);
         // The callout's Notion colour drives bg AND text, per theme — the app's
         // NOTION_CALLOUT_COLORS. This used to be a flat --bg-tertiary that ignored it.
         const cc = calloutColors(b.callout && b.callout.color);
-        html += `<div class="callout" style="background:${cc.bg};color:${cc.text}"><span class="callout-emoji">${escapeHtml(icon)}</span><div>${blockText(b)}${kids}</div></div>`;
+        html += `<div class="callout" style="background:${cc.bg};color:${cc.text}"><span class="callout-emoji">${icon}</span><div>${blockText(b)}${kids}</div></div>`;
         break;
       }
       case 'toggle': html += `<details><summary>${blockText(b)}</summary>${kids}</details>`; break;
