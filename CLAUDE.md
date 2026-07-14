@@ -22,19 +22,23 @@ Repo é **público** porque o GitHub Pages no plano Free exige repo público —
 | Repo                    | O que é                                                              | Onde mexer                                                       |
 | ----------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | **crypto-bros-site**    | ⬅️ **este repo**. Site crypto-bros.com — estático, GitHub Pages       | HTML/CSS/JS, Feed web, i18n do site, PWA/service worker          |
-| **crypto-bros-api**     | Cloudflare Worker — API deste site **e** do app (privado)             | Endpoint, auth/sessão, `/web/*`, schema D1, KV, cron de Web Push  |
+| **crypto-bros-api**     | Cloudflare Worker — API deste site **e** do app (privado)             | Endpoint, auth/sessão, `/web/*`, schema D1, KV, webhook Notion (Web Push) |
 | **crypto-bros-app**     | App iOS/Android — Expo + React Native (privado)                      | UI do app. **Fonte de verdade do design system**                  |
 | **crypto-bros-legal**   | Privacy Policy + Terms — GitHub Pages (público)                      | Textos legais (URLs do OAuth consent screen)                     |
 | **crypto-bros-content** | Conteúdo estático app-native via `raw.githubusercontent` (público)   | Migração Notion → formato estático                                |
 
 **Este site não tem backend próprio.** Todo dado vem do Worker (`crypto-bros-api`) via HTTP:
 
-| Rota            | O que traz                                     |
-| --------------- | ---------------------------------------------- |
-| `GET /web/feed` | Feed gated por sessão (requer login Google)    |
-| `GET /web/post` | Detalhe do post (blocos completos)             |
-| `GET /web/mvrv` | MVRV Z-Score (proxy CoinMetrics — CORS)        |
-| `GET /web/fng`  | Fear & Greed (proxy alternative.me — CORS)     |
+| Rota                        | O que traz                                          |
+| --------------------------- | --------------------------------------------------- |
+| `GET /web/feed`             | Feed gated por sessão (requer login Google)         |
+| `GET /web/post`             | Detalhe do post (blocos completos)                  |
+| `GET /web/lessons`          | Estudos: módulos agrupados + progresso do usuário    |
+| `GET /web/lesson`           | Detalhe da aula (blocos completos)                  |
+| `GET/POST/DELETE /web/progress` | Aula concluída, por conta OAuth (D1)            |
+| `GET /web/link-preview`     | og: metadata do bookmark (o browser não raspa cross-origin) |
+| `GET /web/mvrv`             | MVRV Z-Score (proxy CoinMetrics — CORS)             |
+| `GET /web/fng`              | Fear & Greed (proxy alternative.me — CORS)          |
 
 **Precisa de um dado novo, ou mudar o shape de um existente?** A mudança é em **`crypto-bros-api`** primeiro (`wrangler deploy`), e só depois aqui. Não tente contornar no cliente.
 
