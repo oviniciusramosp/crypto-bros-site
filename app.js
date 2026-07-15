@@ -254,7 +254,18 @@ const THEME_ICONS = {
   light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   dark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>',
 };
-function closeMenu() { $('user-menu').classList.add('hidden'); }
+function menuOpen() { return !$('user-menu').classList.contains('hidden'); }
+function openMenu() {
+  $('user-menu').classList.remove('hidden');
+  $('user-btn').setAttribute('aria-expanded', 'true');
+}
+function closeMenu() {
+  $('user-menu').classList.add('hidden');
+  $('user-btn').setAttribute('aria-expanded', 'false');
+}
+function toggleMenu() {
+  menuOpen() ? closeMenu() : openMenu();
+}
 function renderMenuState() {
   document.querySelectorAll('#menu-lang button').forEach((b) =>
     b.classList.toggle('active', b.dataset.lang === I18N.lang));
@@ -281,7 +292,9 @@ function showLogin() {
 function showApp() {
   $('login').classList.add('hidden');
   $('app').classList.remove('hidden');
-  $('user-btn').replaceChildren(userAvatarNode());
+  // Fill the avatar slot only — the button also holds the hamburger caret, so do NOT
+  // replace all its children.
+  $('user-btn-avatar').replaceChildren(userAvatarNode());
   renderMenuUser();
   applyStaticText();
   startMarquee();
@@ -1479,10 +1492,14 @@ async function enableNotifications() {
 
 // ── Boot ──────────────────────────────────────────────────────────────
 applyTheme();
-$('user-btn').addEventListener('click', (e) => { e.stopPropagation(); $('user-menu').classList.toggle('hidden'); });
+$('user-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(); });
 document.addEventListener('click', (e) => {
-  if (!$('user-menu').classList.contains('hidden') && !e.target.closest('.user')) closeMenu();
+  if (menuOpen() && !e.target.closest('.user')) closeMenu();
 });
+// Scrolling dismisses the popover — it is anchored to the topbar and would otherwise drift
+// or hang over the content. `capture` catches scrolls on inner containers (the modal, a
+// list) too, not just the window. `passive` keeps it off the scroll's critical path.
+window.addEventListener('scroll', () => { if (menuOpen()) closeMenu(); }, { capture: true, passive: true });
 document.querySelectorAll('#menu-lang button').forEach((b) =>
   b.addEventListener('click', () => onLangChange(b.dataset.lang)));
 document.querySelectorAll('#menu-theme button').forEach((b) =>
