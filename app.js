@@ -248,6 +248,34 @@ function renderMenuUser() {
   $('menu-avatar').replaceChildren(userAvatarNode());
 }
 
+// Favorite coins — read-only mirror of what the user picked in the app (GET /web/profile).
+function renderFavoriteCoins(coins) {
+  const section = $('menu-coins-section');
+  const box = $('menu-coins');
+  if (!Array.isArray(coins) || coins.length === 0) {
+    section.classList.add('hidden');
+    box.replaceChildren();
+    return;
+  }
+  box.innerHTML = coins
+    .map((c) => String(c))
+    .map((sym) => `<span class="menu__coin"><img src="./assets/crypto/${sym}.webp" alt="" onerror="this.remove()"/>${sym}</span>`)
+    .join('');
+  section.classList.remove('hidden');
+}
+
+async function loadFavoriteCoins() {
+  if (isPreview()) return;
+  try {
+    const res = await authFetch('/web/profile');
+    if (!res || !res.ok) return;
+    const data = await res.json();
+    renderFavoriteCoins(data.coins);
+  } catch {
+    // Offline — leave the section hidden; it's a nice-to-have.
+  }
+}
+
 // ── Popover menu ──────────────────────────────────────────────────────
 const THEME_ICONS = {
   system: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/></svg>',
@@ -274,6 +302,7 @@ function renderMenuState() {
     b.classList.toggle('active', b.dataset.themePref === pref));
   $('menu-lang-label').textContent = I18N.t('menu.language');
   $('menu-theme-label').textContent = I18N.t('menu.appearance');
+  $('menu-coins-label').textContent = I18N.t('menu.favoriteCoins');
   const tp = (k) => document.querySelector(`#menu-theme [data-theme-pref="${k}"]`);
   tp('system').innerHTML = THEME_ICONS.system + `<span>${I18N.t('appearance.system')}</span>`;
   tp('light').innerHTML = THEME_ICONS.light + `<span>${I18N.t('appearance.light')}</span>`;
@@ -299,6 +328,7 @@ function showApp() {
   applyStaticText();
   startMarquee();
   loadMarket();
+  loadFavoriteCoins();
   if (isPreview()) { loadPreviewFeed(); } else { loadFeed(); }
   syncFromUrl(); // restores ?view= / ?post= / ?lesson= on load and after login
   maybeShowIosBanner();
