@@ -37,6 +37,12 @@
   --radius-card: 16px;
   --radius-pill: 999px;
   --pad-screen: 20px;
+  /* Post modal + desktop lesson panel share this reading column width. */
+  --reading-panel-width: 680px;
+  /* Gap topbar→cards (= panel bottom inset). JS measures chrome into the --*-h vars. */
+  --lesson-panel-gap: 20px;
+  --topbar-h: 69px;
+  --lang-banner-h: 0px;
   --space-xs: 4px;
   --space-sm: 8px;
   --space-md: 16px;
@@ -96,6 +102,20 @@ body {
 }
 .hidden { display: none !important; }
 
+/* ── View transitions (Feed ↔ Estudos ↔ tools) ───────────────────────
+   Opacity fade driven by setView() in app.js. Only active while the
+   .is-view-fade class is on; normal show/hide stays instant via .hidden. */
+.feed > [id^="view-"].is-view-fade {
+  transition: opacity 160ms ease;
+  will-change: opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+  .feed > [id^="view-"].is-view-fade {
+    transition: none;
+    will-change: auto;
+  }
+}
+
 /* ── Login ─────────────────────────────────────────────────────────── */
 .login {
   min-height: 100dvh;
@@ -122,13 +142,33 @@ body {
 
 .login__lang { width: 300px; max-width: 100%; margin-top: 4px; }
 
-/* Locale suggestion banner (Apple-style, top of the page) */
+/* Locale suggestion banner (Apple-style). Site-wide offer sticks at the top of the page.
+   Post-translation offer is a bottom bar so it never fights the topbar or the modal's
+   close/share buttons (see .lang-banner--over-modal). */
 .lang-banner {
   position: sticky; top: 0; z-index: 40;
   display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap;
   padding: 10px 44px 10px 20px;
   background: var(--surface); border-bottom: 1px solid var(--border);
   font-size: 13px; color: var(--text-secondary); text-align: center;
+}
+/* "This post is also available in English." — docks to the bottom of the viewport,
+   above the modal (z-index 150 > 100), clear of topbar + modal chrome at the top. */
+.lang-banner--over-modal {
+  position: fixed;
+  left: 0; right: 0;
+  top: auto;
+  bottom: 0;
+  z-index: 150;
+  padding: 12px 44px calc(12px + env(safe-area-inset-bottom, 0px)) 20px;
+  border-bottom: none;
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
+}
+/* Leave room at the bottom of the open post modal so the last lines are not
+   hidden behind the translation bar. Height is measured into --post-lang-banner-h. */
+body.has-post-lang-banner .modal__scroll {
+  padding-bottom: calc(var(--post-lang-banner-h, 64px) + 12px);
 }
 .lang-banner__text { color: var(--text); }
 .lang-banner__btn {
@@ -142,7 +182,8 @@ body {
 
 /* ── Top bar ────────────────────────────────────────────────────────── */
 .topbar {
-  position: sticky; top: 0; z-index: 10;
+  /* Stick below the site lang banner when it is visible (JS sets --lang-banner-h). */
+  position: sticky; top: var(--lang-banner-h); z-index: 10;
   display: flex; align-items: center; gap: var(--space-sm);
   padding: var(--space-md) var(--pad-screen);
   background: color-mix(in srgb, var(--bg) 85%, transparent);
@@ -282,13 +323,22 @@ body {
 /* ── Estudos / Lessons ────────────────────────────────────────────────────
    Mirrors the app's Estudos tab: one card per module (ModuleSection.tsx), a
    progress DONUT with a completed/total fraction (ModuleProgressDonut.tsx) —
-   not a bar, not a percentage — and numbered lesson rows (LessonListItem.tsx). */
+   not a bar, not a percentage — and numbered lesson rows (LessonListItem.tsx).
+
+   Desktop (≥1024px): opening a lesson becomes a master-detail split — the
+   index compresses left and a sticky detail panel slides in from the right.
+   Tablet/mobile keep the centered modal (see .modal below). */
 
 .viewbar { margin: 20px var(--pad-screen) 0; }
 
+.lessons-layout { display: block; }
+.lessons-index { min-width: 0; }
+/* Panel is desktop-only; never paint or take space on smaller viewports. */
+.lesson-panel { display: none; }
+
 .module {
   position: relative;
-  margin: 20px var(--pad-screen) 0;
+  margin: var(--lesson-panel-gap) var(--pad-screen) 0;
   background: var(--surface);
   border-radius: var(--radius-card); overflow: hidden;
 }
@@ -322,7 +372,11 @@ body {
   cursor: pointer; transition: background 0.12s; width: 100%; text-align: left;
   background: none; border: none; font-family: var(--font);
 }
+.lesson:hover { background: var(--surface-highlight); }
 .lesson:active { background: var(--surface-highlight); }
+.lesson.is-active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.lesson.is-active .lesson__title { color: var(--accent); }
+.lesson.is-active .lesson__chev { color: var(--accent); }
 /* Inset separator — starts where the title does (past the 32px badge + 12px gap),
    matching the app's LessonListItem. Drawn as a pseudo-element so the row keeps
    its full-width padding and press background. */
@@ -344,6 +398,127 @@ body {
 .lesson__date { font-size: 12px; line-height: 16px; color: var(--text-tertiary); }
 .lesson__chev { color: var(--border); flex: 0 0 auto; }
 
+/* Desktop master-detail: index left + sticky lesson panel right. */
+@media (min-width: 1024px) {
+  .feed {
+    transition: max-width 0.35s cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  /* Index (~420) + gap (20) + panel (680, same as .modal__panel) + horizontal pad. */
+  .feed:has(#view-lessons.is-lesson-open) {
+    max-width: min(1140px, 100%);
+  }
+
+  .lessons-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    transition: gap 0.35s cubic-bezier(0.33, 1, 0.68, 1),
+                padding 0.35s cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  #view-lessons.is-lesson-open .lessons-layout {
+    gap: 20px;
+    padding: 0 var(--pad-screen);
+  }
+
+  .lessons-index {
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: 640px;
+    margin-inline: auto;
+    transition: flex-basis 0.35s cubic-bezier(0.33, 1, 0.68, 1),
+                max-width 0.35s cubic-bezier(0.33, 1, 0.68, 1),
+                margin 0.35s cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  #view-lessons.is-lesson-open .lessons-index {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 420px;
+    margin-inline: 0;
+  }
+  /* Modules already pad themselves; in split mode the layout owns the outer pad. */
+  #view-lessons.is-lesson-open .module {
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .lesson-panel {
+    /* Collapsed: zero flex basis so the index keeps the full column. */
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 0;
+    width: 0;
+    min-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+    position: sticky;
+    /* Stick just below chrome + the same gap that separates topbar from module cards. */
+    top: calc(var(--topbar-h) + var(--lang-banner-h) + var(--lesson-panel-gap));
+    /* Viewport − topbar − lang banner − top gap − bottom gap (bottom = top gap). */
+    height: calc(
+      100dvh
+      - var(--topbar-h)
+      - var(--lang-banner-h)
+      - (2 * var(--lesson-panel-gap))
+    );
+    max-height: calc(
+      100dvh
+      - var(--topbar-h)
+      - var(--lang-banner-h)
+      - (2 * var(--lesson-panel-gap))
+    );
+    margin-top: var(--lesson-panel-gap);
+    background: var(--surface);
+    border-radius: var(--radius-card);
+    /* No drop shadow — reserved for true modals (.modal__panel). */
+    transform: translateX(28px);
+    transition:
+      flex-basis 0.35s cubic-bezier(0.33, 1, 0.68, 1),
+      opacity 0.3s ease,
+      transform 0.35s cubic-bezier(0.33, 1, 0.68, 1),
+      width 0.35s cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  .lesson-panel::after {
+    content: ''; position: absolute; inset: 0; z-index: 10; pointer-events: none;
+    border: 1px solid var(--inner-border); border-radius: inherit;
+  }
+  /* Same width as .modal__panel (var --reading-panel-width). At ≥1024 that is 680px. */
+  #view-lessons.is-lesson-open .lesson-panel {
+    flex: 0 0 var(--reading-panel-width);
+    width: var(--reading-panel-width);
+    max-width: var(--reading-panel-width);
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+
+  .lesson-panel__close {
+    position: absolute; top: 16px; left: 16px; z-index: 2;
+    width: 36px; height: 36px; border-radius: var(--radius-pill);
+    border: none; background: rgba(0, 0, 0, 0.5); color: #fff; font-size: 15px;
+    cursor: pointer; backdrop-filter: blur(8px);
+  }
+  .lesson-panel__actions {
+    position: absolute; top: 16px; right: 16px; z-index: 2;
+    display: flex; gap: 8px;
+  }
+  .lesson-panel__scroll {
+    overflow-y: auto; flex: 1; overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch; min-height: 0;
+  }
+  /* Same chrome clearance as the modal when the first child is the body (no cover). */
+  .lesson-panel__scroll > .modal__body:first-child { padding-top: 64px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feed,
+  .lessons-layout,
+  .lessons-index,
+  .lesson-panel {
+    transition: none !important;
+  }
+}
+
 /* Module pill at the top of the lesson modal — "01 - Fundamentos • Aula 2" */
 .lesson-pill {
   display: inline-block; align-self: flex-start; margin-bottom: 10px;
@@ -355,24 +530,57 @@ body {
 .modal__complete.is-done { background: var(--success); backdrop-filter: none; }
 .modal__complete.is-done:hover { background: color-mix(in srgb, var(--success) 85%, #000); }
 
-/* Post detail modal — centered card (like the cryptobro-app reference) */
+/* Post / lesson detail modal — centered card on desktop; full-screen on mobile. */
 .modal {
   position: fixed; inset: 0; z-index: 100; padding: 16px;
   display: flex; align-items: center; justify-content: center;
 }
 .modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.65); backdrop-filter: blur(2px); }
 .modal__panel {
-  position: relative; width: 100%; max-width: min(95vw, 680px); max-height: 90vh;
+  position: relative; width: 100%; max-width: min(95vw, var(--reading-panel-width)); max-height: 90vh;
   background: var(--surface);
   border-radius: var(--radius-card); overflow: hidden; display: flex; flex-direction: column;
   box-shadow: 0 24px 64px rgba(0,0,0,0.5); animation: modal-in 0.2s ease;
 }
 @keyframes modal-in { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .modal__close {
-  position: absolute; top: 16px; left: 16px; z-index: 2; width: 36px; height: 36px; border-radius: var(--radius-pill);
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top, 0px));
+  left: max(16px, env(safe-area-inset-left, 0px));
+  z-index: 2; width: 36px; height: 36px; border-radius: var(--radius-pill);
   border: none; background: rgba(0,0,0,0.5); color: #fff; font-size: 15px; cursor: pointer; backdrop-filter: blur(8px);
 }
-.modal__actions { position: absolute; top: 16px; right: 16px; z-index: 2; display: flex; gap: 8px; }
+.modal__actions {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top, 0px));
+  right: max(16px, env(safe-area-inset-right, 0px));
+  z-index: 2; display: flex; gap: 8px;
+}
+
+/* Phones + small tablets: edge-to-edge reading surface (posts + lessons share this modal). */
+@media (max-width: 767px) {
+  .modal {
+    padding: 0;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+  .modal__panel {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    /* 100dvh covers mobile browser chrome better than % alone. */
+    min-height: 100dvh;
+    border-radius: 0;
+    box-shadow: none;
+    animation: modal-in-full 0.22s ease;
+  }
+  .modal__panel::after { border-radius: 0; }
+  @keyframes modal-in-full {
+    from { transform: translateY(12px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+}
 .modal__action {
   width: 36px; height: 36px; border-radius: var(--radius-pill);
   border: none; background: rgba(0,0,0,0.5); color: #fff; cursor: pointer; backdrop-filter: blur(8px);
@@ -382,9 +590,11 @@ body {
 .modal__action:hover { background: rgba(0,0,0,0.7); }
 .modal__scroll { overflow-y: auto; flex: 1; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 /* The close/share/complete buttons float over the cover image. With no cover the body
-   is the first child, so it would slide under them — push it clear of the 16+36px they
-   occupy. Applies to cover-less posts too, which had the same overlap. */
-.modal__scroll > .modal__body:first-child { padding-top: 64px; } /* clears the floating buttons */
+   is the first child, so it would slide under them — push it clear of button top + size
+   (+ notch safe-area on iOS). Applies to cover-less posts too. */
+.modal__scroll > .modal__body:first-child {
+  padding-top: calc(max(16px, env(safe-area-inset-top, 0px)) + 36px + 12px);
+}
 
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translate(-50%, 12px); z-index: 200;
@@ -393,7 +603,71 @@ body {
   opacity: 0; transition: opacity 0.25s, transform 0.25s; pointer-events: none;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
-.modal__cover { width: 100%; aspect-ratio: 14 / 9; object-fit: cover; background: var(--bg-tertiary); display: block; }
+.modal__cover { width: 100%; aspect-ratio: 14 / 9; object-fit: cover; background: var(--bg-tertiary); display: block; cursor: default; }
+
+/* Progressive images — app parity (CachedImage + BlurPlaceholder).
+   Tiny blurred thumb first, full (or ?width= capped) image fades in on load. */
+.lazy-img {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+}
+.lazy-img__thumb,
+.lazy-img__full {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.lazy-img__thumb {
+  position: absolute;
+  inset: 0;
+  filter: blur(20px);
+  transform: scale(1.08); /* hide soft edges from the blur */
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+.lazy-img__full {
+  position: relative;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.lazy-img.is-loaded .lazy-img__full { opacity: 1; }
+.lazy-img.is-loaded .lazy-img__thumb { opacity: 0; }
+/* Cover slots keep the 14/9 frame while either layer is showing. */
+.lazy-img.card__cover,
+.lazy-img.modal__cover {
+  width: 100%;
+  aspect-ratio: 14 / 9;
+}
+.lazy-img.card__cover .lazy-img__full,
+.lazy-img.modal__cover .lazy-img__full {
+  aspect-ratio: 14 / 9;
+  object-fit: cover;
+}
+/* Content figures: hold a 16/9 frame until the full image reports dimensions
+   (app ImageBlock default), then hug the natural aspect. */
+.nb-figure .lazy-img {
+  width: 100%;
+  border-radius: 10px;
+  margin: 0;
+  aspect-ratio: 16 / 9;
+}
+.nb-figure .lazy-img.is-loaded { aspect-ratio: auto; }
+.nb-figure .lazy-img__full {
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+}
+.nb-figure .lazy-img.is-loaded .lazy-img__full {
+  height: auto;
+  object-fit: contain;
+}
+.modal__content .lazy-img { margin: 12px 0; border-radius: 10px; }
+.modal__content .nb-figure .lazy-img { margin: 0; }
+.modal__content .lazy-img,
+.modal__content .nb-figure .lazy-img { cursor: zoom-in; }
 .modal__body { padding: 20px; }
 .modal__title { font-size: 24px; line-height: 30px; font-weight: 700; margin-top: 10px; }
 /* Notion block typography + spacing — ported verbatim from the app's block components
@@ -413,6 +687,7 @@ body {
 .modal__content ul, .modal__content ol { padding-left: 22px; margin: 0 0 12px; }
 .modal__content li { margin: 4px 0; font-size: 15px; line-height: 24px; }
 .modal__content img { width: 100%; border-radius: 10px; margin: 12px 0; }
+.modal__content .lazy-img img { margin: 0; border-radius: inherit; }
 .modal__content blockquote { border-left: 3px solid var(--accent); padding-left: 14px; margin: 12px 0; color: var(--text-secondary); }
 /* bg + text come from the block's Notion colour (set inline by calloutColors()).
    Geometry from the app's CalloutBlock.tsx: 28px icon column + 12px gutter, 16px padding,
@@ -443,14 +718,16 @@ body {
 .lightbox { position: fixed; inset: 0; z-index: 300; background: rgba(0, 0, 0, 0.92); display: flex; align-items: center; justify-content: center; padding: 24px; cursor: zoom-out; }
 .lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
 .lightbox__close { position: absolute; top: 16px; right: 16px; width: 40px; height: 40px; border-radius: var(--radius-pill); border: none; background: rgba(255, 255, 255, 0.12); color: #fff; font-size: 17px; cursor: pointer; }
-.modal__content img, .modal__content .nb-figure img { cursor: zoom-in; }
+.modal__content img, .modal__content .nb-figure img,
+.modal__content .lazy-img, .modal__content .nb-figure .lazy-img { cursor: zoom-in; }
 /* A bookmark's thumb/favicon are part of a link, not zoomable content. */
 .modal__content .nb-bookmark img { cursor: pointer; }
 
 /* Notion block elements (shared by card preview + modal content) */
 .nb-hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 .nb-figure { margin: 12px 0; }
-.nb-figure img { width: 100%; border-radius: 10px; display: block; }
+.nb-figure img,
+.nb-figure .lazy-img { width: 100%; border-radius: 10px; display: block; }
 .nb-figure figcaption { margin-top: 6px; font-size: 12px; line-height: 16px; color: var(--text-tertiary); text-align: center; }
 .nb-video { position: relative; aspect-ratio: 16 / 9; margin: 12px 0; border-radius: 10px; overflow: hidden; background: #000; }
 .nb-video iframe, .nb-video video { position: absolute; inset: 0; width: 100%; height: 100%; border: none; }
@@ -518,16 +795,26 @@ body {
 .ios-banner__close { flex: 0 0 auto; border: none; background: none; color: var(--text-tertiary); font-size: 15px; cursor: pointer; padding: 4px; }
 
 /* ── Feed layout ────────────────────────────────────────────────────── */
-.feed { max-width: 640px; margin: 0 auto; padding-bottom: var(--pad-screen); }
+.feed {
+  max-width: 640px; margin: 0 auto; padding-bottom: var(--pad-screen);
+  /* max-width animates when a lesson panel opens on desktop (see Estudos block). */
+}
 
 /* ── Price marquee ──────────────────────────────────────────────────── */
 .marquee {
   margin: var(--space-md) var(--pad-screen) 0;
   background: var(--surface); border: 1px solid var(--inner-border);
   border-radius: var(--radius-card); padding: 4px 0; overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
 }
+.marquee:hover { background: color-mix(in srgb, var(--surface) 92%, var(--text) 8%); }
+.marquee:active { transform: scale(0.97); }
+.marquee:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .marquee__viewport { height: 48px; display: flex; align-items: center; overflow: hidden; }
-.marquee__track { display: flex; width: max-content; animation: marquee-scroll 39s linear infinite; }
+.marquee__track { display: flex; width: max-content; animation: marquee-scroll 39s linear infinite; pointer-events: none; }
 .marquee:hover .marquee__track { animation-play-state: paused; }
 @keyframes marquee-scroll { from { transform: translateX(0); } to { transform: translateX(-1170px); } }
 .marquee__item { width: 110px; margin-right: 20px; display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
@@ -540,37 +827,501 @@ body {
 .up { color: var(--success); }
 .down { color: var(--error); }
 
+/* ── Crypto market modal (marquee → chart) ───────────────────────────── */
+/* Parity with app/crypto-market.tsx + LineChart (SVG port of Skia chart). */
+.mm {
+  position: fixed; inset: 0; z-index: 110;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+}
+.mm.hidden { display: none; }
+.mm__backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.65); backdrop-filter: blur(2px);
+}
+.mm__panel {
+  position: relative; width: 100%; max-width: 480px; max-height: min(92vh, 720px);
+  background: var(--surface); border: 1px solid var(--inner-border);
+  border-radius: var(--radius-card); overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+  animation: mm-in 0.2s ease;
+  /* Chart is edge-to-edge; header/grid pad themselves. */
+  padding-top: var(--pad-screen);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+@keyframes mm-in {
+  from { transform: scale(0.96) translateY(8px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+@media (max-width: 767px) {
+  .mm { padding: 0; align-items: stretch; }
+  .mm__panel {
+    max-width: none; max-height: none; min-height: 100dvh;
+    border-radius: 0; box-shadow: none;
+    padding-top: max(var(--pad-screen), env(safe-area-inset-top, 0px));
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  }
+}
+.mm__header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 0 var(--pad-screen) 16px; flex: 0 0 auto;
+}
+.mm__coin-header { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.mm__coin-icon { width: 32px; height: 32px; border-radius: 16px; object-fit: contain; flex: 0 0 auto; }
+.mm__coin-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mm__coin-sym { font-size: 14px; line-height: 14px; font-weight: 700; letter-spacing: 0.3px; }
+.mm__coin-pricerow {
+  display: flex; align-items: center; gap: 3px; flex-wrap: wrap;
+  font-variant-numeric: tabular-nums;
+}
+.mm__coin-price { font-size: 13px; line-height: 16px; color: var(--text-secondary); }
+.mm__coin-chg { font-size: 12px; line-height: 16px; font-weight: 600; }
+.mm__coin-dot { font-size: 10px; line-height: 16px; color: var(--text-tertiary); }
+.mm__coin-24h { font-size: 10px; line-height: 16px; font-weight: 500; color: var(--text-tertiary); }
+.mm__close {
+  flex: 0 0 auto; width: 32px; height: 32px; border-radius: var(--radius-pill);
+  border: none; background: var(--bg-tertiary); color: var(--text-secondary);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 0.15s;
+}
+.mm__close:hover { background: color-mix(in srgb, var(--bg-tertiary) 70%, var(--text) 30%); }
+
+.mm__chart-wrap {
+  position: relative;
+  height: 200px;
+  margin-bottom: 4px;
+  flex: 0 0 auto;
+  touch-action: none; /* scrub without scrolling the sheet */
+  user-select: none;
+}
+.mm__chart { width: 100%; height: 100%; }
+.mm__chart svg { display: block; width: 100%; height: 100%; }
+.mm__chart-fallback {
+  height: 200px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 8px;
+  color: var(--text-tertiary); font-size: 13px; font-weight: 500;
+}
+.mm__chart-fallback button {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 4px; padding: 8px 14px; border: none; border-radius: 20px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text-secondary); font-family: var(--font); font-size: 13px; font-weight: 600;
+  cursor: pointer;
+}
+.mm__chart-sk {
+  height: 200px; margin: 0 var(--pad-screen);
+  border-radius: 8px; background: var(--surface-highlight);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.mm__tooltip {
+  position: absolute; top: 8px; z-index: 2; pointer-events: none;
+  padding: 6px 10px; border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--inner-border);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-sm);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.mm__tooltip.hidden { display: none; }
+.mm__tooltip-price { font-size: 13px; font-weight: 700; color: var(--text); line-height: 16px; }
+.mm__tooltip-date { font-size: 11px; color: var(--text-tertiary); line-height: 14px; margin-top: 1px; }
+
+.mm__periods {
+  display: flex; justify-content: center;
+  padding: 0 var(--pad-screen) 16px;
+  flex: 0 0 auto;
+}
+.mm__seg {
+  display: inline-flex; flex-direction: row; gap: 2px; padding: 3px;
+  background: var(--seg-track); border-radius: var(--radius-pill);
+}
+.mm__seg button {
+  border: none; background: none; cursor: pointer; font-family: var(--font);
+  padding: 5px 12px; border-radius: var(--radius-pill); white-space: nowrap;
+  font-size: 12px; font-weight: 500; color: var(--text-secondary);
+  transition: background 0.2s, color 0.2s;
+}
+.mm__seg button.active {
+  font-weight: 600;
+  background: var(--mm-seg-bg, var(--seg-active));
+  color: var(--mm-seg-fg, var(--seg-active-text));
+}
+
+.mm__divider {
+  height: 1px; background: var(--divider);
+  margin: 0 var(--pad-screen) 12px;
+  flex: 0 0 auto;
+}
+/* Coin picker — full MARKET_COINS list, app CryptoGridItem layout (radius 20). */
+.mm__grid {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 20px;
+  column-gap: var(--pad-screen);
+  padding: 0 var(--pad-screen) 20px;
+  flex: 0 0 auto;
+}
+.mm__grid-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 6px;
+  border-radius: 20px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-family: var(--font);
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+  /* ~3 columns like the app (basis ~28%) */
+  flex: 1 1 28%;
+  max-width: calc(33.333% - 14px);
+  transition: background 0.15s, transform 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (max-width: 400px) {
+  .mm__grid-item { flex-basis: 42%; max-width: calc(50% - 10px); }
+}
+.mm__grid-item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+.mm__grid-item:active:not(:disabled) { transform: scale(0.9); }
+.mm__grid-item.selected {
+  cursor: default;
+  /* app: isDark ? rgba(255,255,255,0.08) : rgba(0,0,0,0.05) */
+  background: rgba(255, 255, 255, 0.08);
+}
+:root[data-theme='light'] .mm__grid-item.selected {
+  background: rgba(0, 0, 0, 0.05);
+}
+.mm__grid-icon {
+  width: 24px; height: 24px; border-radius: 12px;
+  object-fit: contain; flex: 0 0 auto;
+}
+.mm__grid-info {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.mm__grid-sym {
+  font-size: 12px; font-weight: 700; line-height: 12px; letter-spacing: 0.3px;
+}
+.mm__grid-price {
+  font-size: 10px; line-height: 10px; color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Fine-pointer hover cursor on chart scrub area */
+@media (hover: hover) and (pointer: fine) {
+  .mm__chart-wrap { cursor: crosshair; }
+}
+
+/* ── Shared price chart stage (entrance = useChartEntrance, easeOutCubic) ─ */
+.pc__stage {
+  width: 100%; height: 100%;
+  opacity: 0;
+  /* Easing.out(Easing.cubic) ≈ cubic-bezier(0.215, 0.61, 0.355, 1) */
+  transition: opacity 300ms cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+.pc__stage.pc__stage--slide {
+  transform: translateX(-40px);
+  transition:
+    opacity 300ms cubic-bezier(0.215, 0.61, 0.355, 1),
+    transform 600ms cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+.pc__stage.is-in {
+  opacity: 1;
+  transform: translateX(0);
+}
+.pc__stage svg { display: block; width: 100%; height: 100%; }
+.pc__fallback {
+  height: 100%; min-height: 120px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-tertiary); font-size: 13px; font-weight: 500;
+  padding: 16px; text-align: center;
+}
+
+/* ── Inline chart / price widgets in post & lesson body ─────────────── */
+.nb-chart {
+  position: relative;
+  width: 100%;
+  height: 200px;
+  margin: 12px 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+.nb-chart--half {
+  display: inline-block;
+  width: calc(50% - 6px);
+  vertical-align: top;
+  margin-right: 6px;
+}
+@media (max-width: 520px) {
+  .nb-chart--half { width: 100%; margin-right: 0; }
+}
+.nb-chart__sk {
+  width: 100%; height: 100%;
+  background: var(--surface-highlight);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.nb-chart__canvas { width: 100%; height: 100%; }
+.nb-chart__tip { /* reuses .mm__tooltip */ }
+
+.nb-price { margin: 10px 0; }
+.nb-price__card {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 14px; border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+.nb-price__icon { width: 24px; height: 24px; border-radius: 12px; object-fit: contain; flex: 0 0 auto; }
+.nb-price__info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.nb-price__sym { font-size: 12px; font-weight: 700; line-height: 14px; letter-spacing: 0.3px; }
+.nb-price__row { display: flex; align-items: baseline; gap: 6px; }
+.nb-price__val {
+  font-size: 12px; line-height: 14px; color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.nb-price__chg { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.nb-price__unknown { font-size: 12px; color: var(--text-tertiary); }
+.nb-price__sk-icon {
+  width: 24px; height: 24px; border-radius: 12px;
+  background: var(--surface-highlight); animation: pulse 1.4s ease-in-out infinite;
+}
+.nb-price__sk-text { display: flex; flex-direction: column; gap: 4px; }
+.nb-price__sk-line {
+  width: 48px; height: 12px; border-radius: 4px;
+  background: var(--surface-highlight); animation: pulse 1.4s ease-in-out infinite;
+}
+.nb-price__sk-line.short { width: 72px; }
+
+.nb-widget-unsupported {
+  display: flex; align-items: center; gap: 8px;
+  margin: 10px 0; padding: 10px 14px; border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  color: var(--text-tertiary); font-size: 13px; font-weight: 500;
+}
+.nb-widget-unsupported svg { flex: 0 0 auto; opacity: 0.7; }
+
 /* ── Market widget (Fear & Greed + MVRV) ───────────────────────────── */
+/* Parity with FearGreedWidget.tsx (glass card + dual gauge sections). */
 .market {
+  position: relative;
   margin: 12px var(--pad-screen) 0;
   background: var(--surface); border: 1px solid var(--inner-border);
   border-radius: var(--radius-card); padding: var(--space-md);
   display: flex; align-items: stretch; overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
 }
+.market:hover { background: color-mix(in srgb, var(--surface) 92%, var(--text) 8%); }
+.market:active { transform: scale(0.97); }
+.market:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.market__info {
+  position: absolute; top: var(--space-sm); right: var(--space-sm); z-index: 1;
+  width: 16px; height: 16px; color: var(--divider); pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.market__info svg { width: 16px; height: 16px; display: block; }
+.market__sections { display: flex; align-items: stretch; flex: 1; width: 100%; }
 .market__section { flex: 1; display: flex; flex-direction: column; align-items: center; }
 .market__divider { width: 1px; align-self: stretch; margin: 0 12px; background: var(--divider); }
-.market__title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-tertiary); margin-bottom: 8px; }
-.gauge-row { display: flex; align-items: center; gap: 8px; }
+.market__title {
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-tertiary); margin-bottom: var(--space-sm); text-align: center;
+}
+.gauge-row { display: flex; align-items: center; gap: var(--space-sm); }
 .gauge-marker { stroke: var(--surface); }
-.market__value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.market__label { font-size: 12px; font-weight: 600; margin-top: 4px; text-align: center; }
+.market__value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.market__label { font-size: 12px; font-weight: 600; margin-top: var(--space-xs); text-align: center; }
+
+/* Indicator info modal — compact sheet (app indicator-info / FormSheetContent) */
+.imodal {
+  position: fixed; inset: 0; z-index: 110;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+}
+.imodal.hidden { display: none; }
+.imodal__backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.65); backdrop-filter: blur(2px);
+}
+.imodal__panel {
+  position: relative; width: 100%; max-width: 420px; max-height: min(90vh, 640px);
+  background: var(--surface); border: 1px solid var(--inner-border);
+  border-radius: var(--radius-card); overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+  animation: imodal-in 0.2s ease;
+}
+@keyframes imodal-in {
+  from { transform: scale(0.96) translateY(8px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+.imodal__header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 16px 16px 12px; flex: 0 0 auto;
+}
+.imodal__title {
+  font-size: 17px; font-weight: 600; line-height: 22px; margin: 0;
+  color: var(--text);
+}
+.imodal__close {
+  flex: 0 0 auto; width: 32px; height: 32px; border-radius: var(--radius-pill);
+  border: none; background: var(--bg-tertiary); color: var(--text-secondary);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 0.15s;
+}
+.imodal__close:hover { background: color-mix(in srgb, var(--bg-tertiary) 70%, var(--text) 30%); }
+.imodal__scroll {
+  overflow-y: auto; flex: 1; overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 16px 20px;
+}
+.imodal__section { margin-bottom: var(--space-sm); }
+.imodal__section-title {
+  font-size: 15px; font-weight: 600; line-height: 20px;
+  color: var(--text); margin: 0 0 var(--space-xs);
+}
+.imodal__source {
+  font-size: 11px; font-weight: 400; line-height: 16px;
+  color: var(--text-tertiary); margin: 0 0 var(--space-sm);
+}
+.imodal__desc {
+  font-size: 13px; font-weight: 400; line-height: 18px;
+  color: var(--text-secondary); margin: 0 0 12px;
+}
+.imodal__ranges { display: flex; flex-direction: column; gap: 6px; }
+.imodal__range {
+  display: flex; align-items: center; gap: var(--space-sm);
+}
+.imodal__dot {
+  width: 10px; height: 10px; border-radius: 5px; flex: 0 0 auto;
+}
+.imodal__range-label {
+  font-size: 12px; font-weight: 400; line-height: 16px; color: var(--text);
+}
+.imodal__divider {
+  height: 1px; background: var(--divider); margin: var(--space-md) 0;
+}
+.imodal__disclaimer {
+  font-size: 11px; line-height: 16px; font-weight: 400; font-style: italic;
+  color: var(--text-tertiary); margin: var(--space-md) 0 0;
+}
 
 /* ── Tag filter bar ─────────────────────────────────────────────────── */
-.tagbar {
-  display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none;
+.tagbar-wrap {
+  display: flex; align-items: center; gap: 4px;
   padding: var(--space-md) var(--pad-screen) 12px;
 }
+.tagbar-viewport {
+  position: relative; flex: 1; min-width: 0;
+}
+/* Edge fades — hide at the corresponding end so they never cover a pill. */
+.tagbar-viewport::before,
+.tagbar-viewport::after {
+  content: '';
+  position: absolute; top: 0; bottom: 0; width: 36px;
+  pointer-events: none; z-index: 2;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.tagbar-viewport::before {
+  left: 0;
+  background: linear-gradient(to right, var(--bg) 0%, transparent 100%);
+}
+.tagbar-viewport::after {
+  right: 0;
+  background: linear-gradient(to left, var(--bg) 0%, transparent 100%);
+}
+.tagbar-wrap[data-at-start="0"] .tagbar-viewport::before { opacity: 1; }
+.tagbar-wrap[data-at-end="0"] .tagbar-viewport::after { opacity: 1; }
+
+.tagbar {
+  display: flex; gap: 8px; align-items: center;
+  /* Only horizontal scroll. Browsers can't pair overflow-x:auto with overflow-y:visible
+     (visible computes to auto), so vertical clipping is unavoidable on the scrollport —
+     pad enough for shadow-sm (blur 8) + hover translateY(-1px) to paint inside it. */
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-width: none;
+  padding: 10px 4px;
+  margin: -8px 0; /* cancel the extra pad so wrap spacing stays the same */
+  scroll-behavior: smooth;
+}
 .tagbar::-webkit-scrollbar { display: none; }
+
+/* Prev/next — desktop + tablet only (mouse navigation). Hidden on phone. */
+.tagbar-nav {
+  display: none;
+  flex: 0 0 auto; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0;
+  border: 1px solid var(--inner-border); border-radius: var(--radius-pill);
+  background: var(--surface); color: var(--text-secondary);
+  cursor: pointer; box-shadow: var(--shadow-sm);
+  transition: background 0.15s, color 0.15s, opacity 0.15s, border-color 0.15s;
+}
+.tagbar-nav svg { width: 16px; height: 16px; display: block; }
+.tagbar-nav:disabled {
+  opacity: 0.35; cursor: default; box-shadow: none;
+}
+@media (min-width: 768px) {
+  .tagbar-wrap.is-scrollable .tagbar-nav { display: inline-flex; }
+  .tagbar-nav:not(:disabled):hover {
+    background: var(--surface-highlight); color: var(--text);
+  }
+  .tagbar-nav:not(:disabled):active { transform: scale(0.95); }
+}
+
 .tag-pill {
   flex: 0 0 auto; display: flex; align-items: center; gap: 6px;
   padding: 6px 16px; border-radius: 22px; border: 1px solid var(--inner-border);
   background: var(--surface); color: var(--text-secondary);
   font-family: var(--font); font-size: 14px; font-weight: 500; white-space: nowrap;
-  cursor: pointer; box-shadow: var(--shadow-sm); transition: transform 0.15s;
+  cursor: pointer; box-shadow: var(--shadow-sm);
+  transition: transform 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s, border-color 0.15s, filter 0.15s;
 }
 .tag-pill:active { transform: scale(0.95); }
 .tag-pill.selected { font-weight: 600; box-shadow: none; }
-.tag-pill svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.tag-pill svg { width: 14px; height: 14px; flex: 0 0 auto; display: block; }
+/* Solid category glyph — colour set inline from Notion pill hex. */
+.tag-pill__glyph {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 auto; line-height: 0;
+}
+/* Ticker SVGs (assets/tickers) — reusable class for any surface. */
+.ticker-icon,
+.tag-pill__ticker,
+.tag-pill__coin {
+  width: 16px; height: 16px; border-radius: 50%;
+  object-fit: contain; flex: 0 0 auto; display: block;
+}
+/* Optional monochrome webp (legacy coinIcon tint). */
+.tag-pill__coin--tint {
+  background-color: currentColor;
+  -webkit-mask: var(--coin) center / contain no-repeat;
+  mask: var(--coin) center / contain no-repeat;
+}
+@media (hover: hover) and (pointer: fine) {
+  .tag-pill:not(.selected):hover {
+    background: var(--surface-highlight);
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--text) 18%, transparent);
+    transform: translateY(-1px);
+  }
+  .tag-pill.selected:hover {
+    filter: brightness(1.12);
+    transform: translateY(-1px);
+  }
+  .tag-pill:active { transform: scale(0.95); filter: none; }
+}
 
 /* ── Post card ──────────────────────────────────────────────────────── */
 .card {
@@ -622,19 +1373,860 @@ body {
 .card__more button:active { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 
 /* ── States ─────────────────────────────────────────────────────────── */
+/* Mirrors app StateMessage / EmptyState (src/components/ui/{StateMessage,EmptyState}.tsx). */
 .state { text-align: center; color: var(--text-secondary); padding: 48px var(--pad-screen); font-size: 14px; }
-.state h3 { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.state h3, .state__title {
+  font-size: 18px; font-weight: 600; color: var(--text);
+  margin: 0 0 8px; line-height: 1.3;
+}
+.state__msg {
+  font-size: 15px; line-height: 22px; color: var(--text-secondary);
+  margin: 0 auto; max-width: 280px;
+}
 .state button { margin-top: var(--space-md); padding: 10px 18px; border: none; border-radius: var(--radius-pill); background: var(--accent); color: #fff; font-weight: 600; font-family: var(--font); cursor: pointer; }
+.state--empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 48px 32px;
+}
+/* Icon circle — app: 96×96, surface bg, Ionicons 48, textTertiary */
+.state__icon {
+  width: 96px; height: 96px; border-radius: 48px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); color: var(--text-tertiary);
+  margin-bottom: 24px; flex: 0 0 auto;
+}
+.state__icon svg { width: 48px; height: 48px; display: block; }
 
 .skeleton { animation: pulse 1.4s ease-in-out infinite; }
 .skeleton .card__cover { background: var(--surface-highlight); }
 .skeleton .sk-line { height: 14px; border-radius: 6px; background: var(--surface-highlight); margin: 8px 0; }
 .skeleton .sk-line.title { height: 24px; width: 70%; }
 .skeleton .sk-line.short { width: 40%; }
+
+/* Module/lesson skeletons — paint only. Geometry comes from the real classes
+   (.module__header, .lesson, .lesson__badge, …) so padding/gap/line-height match. */
+.sk-block {
+  background: var(--surface-highlight);
+  border-radius: 6px;
+  color: transparent !important; /* kill any inherited text metrics leaking in */
+  overflow: hidden;
+}
+.sk-block--label {
+  /* .module__label: font-size 10 / line-height 14 + margin-bottom 4 */
+  height: 14px; width: 46%; max-width: 180px; margin-bottom: 4px;
+}
+.sk-block--module-title {
+  /* .module__title: font-size 20 / line-height 25 */
+  height: 25px; width: 62%; max-width: 260px;
+}
+.sk-block--donut {
+  /* .module__donut: 36×36 circle */
+  width: 36px; height: 36px; border-radius: 50%; flex: 0 0 auto;
+}
+.sk-block--badge {
+  /* .lesson__badge: 32×32 pill — keep its own bg over the accent tint */
+  background: var(--surface-highlight) !important;
+  color: transparent !important;
+}
+.sk-block--lesson-title {
+  /* .lesson__title: line-height 20 (single-line placeholder) */
+  height: 20px; max-width: 100%;
+  display: block; -webkit-line-clamp: unset; -webkit-box-orient: unset;
+}
+.sk-block--lesson-date {
+  /* .lesson__date: line-height 16 */
+  height: 16px; width: 38%; max-width: 96px;
+}
+.sk-block--chev {
+  /* chevronSvg is 20×20 */
+  width: 20px; height: 20px; border-radius: 4px; flex: 0 0 auto; opacity: 0.55;
+}
+.lesson--skeleton {
+  cursor: default; pointer-events: none;
+}
+.lesson--skeleton:hover,
+.lesson--skeleton:active { background: none; }
+
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 .preview-tag {
   position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
   font-size: 11px; color: var(--text-tertiary); background: var(--surface);
   border: 1px solid var(--border); padding: 4px 12px; border-radius: 999px; z-index: 20;
+}
+
+/* ── Menu tool rows (DCA / Position calculators) ─────────────────────── */
+.menu__tools-section { gap: 4px; }
+.menu__tool {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  border: none; background: none; color: var(--text); text-align: left;
+  padding: 10px 8px; border-radius: 12px; cursor: pointer; font-family: var(--font);
+  transition: background 0.15s;
+}
+.menu__tool:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.menu__tool-icon {
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);
+}
+.menu__tool-text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.menu__tool-title { font-size: 14px; font-weight: 600; color: var(--text); line-height: 18px; }
+.menu__tool-sub { font-size: 12px; color: var(--text-tertiary); line-height: 16px; }
+
+/* ── Calculator full-page views (same chrome as Glossary) ─────────────
+   Content width follows .feed (max-width: 640px). Floating chrome uses the
+   same column so back/search never spill past the reading width. */
+.calc-page {
+  position: relative;
+  min-height: calc(100dvh - var(--topbar-h) - var(--lang-banner-h));
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+/* Shared floating-chrome tokens (back + search must match). */
+.calc-page__header,
+.glossary__header {
+  --float-chrome-bg: color-mix(in srgb, var(--surface) 88%, transparent);
+  --float-chrome-border: var(--inner-border);
+  --float-chrome-fg: var(--text);
+  --float-chrome-muted: var(--text-tertiary);
+}
+.calc-page__header {
+  position: fixed;
+  top: calc(var(--topbar-h) + var(--lang-banner-h) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  /* Same column as .feed */
+  width: min(640px, 100%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 var(--pad-screen);
+  background: none;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.calc-page__header > * { pointer-events: auto; }
+.calc-page__back,
+.glossary__back {
+  flex: 0 0 auto;
+  width: 36px; height: 36px; border-radius: var(--radius-pill);
+  border: 1px solid var(--float-chrome-border);
+  background: var(--float-chrome-bg);
+  color: var(--float-chrome-fg);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; font-family: var(--font);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-sm);
+  transition: background 0.15s, filter 0.15s;
+}
+.calc-page__back:hover,
+.glossary__back:hover { filter: brightness(1.06); }
+.calc-page__scroll {
+  flex: 1;
+  min-width: 0;
+  /* Clear the floating back pill (12 top gap + 36 button + 16 breathing room). */
+  padding: calc(12px + 36px + 16px) var(--pad-screen) max(40px, env(safe-area-inset-bottom, 0px));
+}
+/* Title / subtitle still rendered inside the scroll body by JS */
+.calc__title {
+  font-size: 28px; font-weight: 700; letter-spacing: -0.4px; color: var(--text);
+  margin: 0 0 var(--space-xs);
+}
+.calc__subtitle {
+  font-size: 15px; line-height: 20px; color: var(--text-tertiary);
+  margin: 0 0 var(--space-lg);
+}
+.calc-card {
+  background: var(--surface);
+  border: 1px solid var(--inner-border);
+  border-radius: var(--radius-card);
+  padding: var(--pad-screen);
+  margin-bottom: 0;
+}
+.calc-card + .calc-card,
+.calc-card.calc-card--result { margin-top: var(--space-md); }
+.calc-card__title {
+  font-size: 17px; font-weight: 600; color: var(--text);
+  margin: 0 0 var(--space-md);
+}
+.calc-card__subtitle {
+  font-size: 13px; color: var(--text-tertiary);
+  margin: calc(var(--space-sm) * -1) 0 var(--space-md);
+}
+.calc-card--result {
+  opacity: 0; transform: translateY(12px);
+  animation: calc-card-in 0.3s cubic-bezier(0.215, 0.61, 0.355, 1) forwards;
+}
+.calc-card--result[data-i="0"] { animation-delay: 0ms; }
+.calc-card--result[data-i="1"] { animation-delay: 120ms; }
+.calc-card--result[data-i="2"] { animation-delay: 240ms; }
+@keyframes calc-card-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Inputs — app InputField */
+.calc-field { margin-bottom: var(--space-md); }
+.calc-field:last-child { margin-bottom: 0; }
+.calc-field.flex { flex: 1; min-width: 0; }
+.calc-field__label {
+  display: block; font-size: 13px; font-weight: 500; color: var(--text-secondary);
+  margin-bottom: var(--space-xs);
+}
+.calc-field__label--sm { font-size: 11px; color: var(--text-tertiary); }
+.calc-field__row {
+  display: flex; align-items: center; gap: 6px; height: 48px;
+  padding: 0 var(--space-md); border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  border: 1.5px solid transparent;
+  transition: border-color 0.15s;
+}
+.calc-field__row:focus-within { border-color: var(--accent); }
+.calc-field__prefix,
+.calc-field__suffix {
+  font-size: 15px; font-weight: 500; color: var(--text-tertiary); white-space: nowrap;
+}
+.calc-field__input {
+  flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+  color: var(--text); font-family: var(--font); font-size: 16px; font-weight: 500;
+  padding: 0; height: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.calc-field__input::placeholder { color: var(--text-tertiary); }
+.calc-field__hint {
+  display: block; margin-top: 4px; font-size: 11px; color: var(--text-tertiary); line-height: 14px;
+}
+.calc-section-label {
+  display: block; font-size: 13px; font-weight: 500; color: var(--text-secondary);
+  margin: var(--space-sm) 0 2px;
+}
+.calc-data-range {
+  display: block; font-size: 11px; color: var(--text-tertiary);
+  margin: calc(var(--space-xs) * -1) 0 var(--space-md);
+}
+
+/* Linked % / $ fields */
+.calc-linked {
+  display: flex; align-items: flex-start; gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+.calc-linked .calc-field { flex: 1; margin-bottom: 0; }
+.calc-linked__icon {
+  padding-top: 34px; color: var(--text-tertiary);
+  display: inline-flex; align-items: center;
+}
+
+/* Frequency segmented control (reuses .mm__seg look) */
+.calc-freq { margin-bottom: var(--space-md); }
+.calc-freq .mm__seg { width: 100%; display: flex; }
+.calc-freq .mm__seg button { flex: 1; }
+
+/* Coin dropdown trigger */
+.calc-coin-btn {
+  display: flex; align-items: center; gap: var(--space-sm);
+  width: 100%; height: 48px; padding: 0 var(--space-md); border-radius: 12px;
+  border: none; cursor: pointer; font-family: var(--font);
+  background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text);
+  text-align: left;
+}
+.calc-coin-btn:hover { background: color-mix(in srgb, var(--text) 9%, transparent); }
+.calc-coin-btn img { width: 24px; height: 24px; border-radius: 12px; object-fit: contain; }
+.calc-coin-btn__sym { flex: 1; font-size: 16px; font-weight: 500; }
+.calc-coin-btn__chev { color: var(--text-tertiary); }
+
+/* Date row */
+.calc-date-row {
+  display: flex; gap: var(--space-sm); align-items: flex-start;
+}
+.calc-date-btn {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; height: 48px; padding: 0 var(--space-md); border-radius: 12px;
+  border: none; cursor: pointer; font-family: var(--font);
+  background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text);
+  font-size: 15px; font-weight: 500; text-align: left;
+}
+.calc-date-btn:hover { background: color-mix(in srgb, var(--text) 9%, transparent); }
+.calc-date-btn__chev { color: var(--text-tertiary); flex: 0 0 auto; }
+
+/* Result rows */
+.calc-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: var(--space-sm) 0; gap: var(--space-md);
+}
+.calc-row__label { flex: 1; min-width: 0; }
+.calc-row__label-main { font-size: 15px; color: var(--text-secondary); line-height: 20px; }
+.calc-row__label-cap { font-size: 11px; color: var(--text-tertiary); line-height: 14px; margin-top: 2px; }
+.calc-row__value {
+  font-size: 15px; font-weight: 600; color: var(--text);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.calc-row__value.is-accent { color: var(--accent); }
+.calc-row__value.is-success { color: var(--success); }
+.calc-row__value.is-danger { color: var(--error); }
+.calc-divider { height: 1px; background: var(--border); }
+
+/* Note / warning blocks */
+.calc-note {
+  display: flex; align-items: flex-start; gap: var(--space-sm);
+  margin-top: var(--space-md); padding: var(--space-sm);
+  border-radius: 8px; background: var(--surface-highlight);
+  color: var(--text-tertiary); font-size: 11px; line-height: 16px;
+}
+.calc-note svg { flex: 0 0 auto; margin-top: 1px; }
+.calc-warning {
+  display: flex; align-items: flex-start; gap: var(--space-sm);
+  padding: var(--space-sm); color: var(--text-tertiary); font-size: 15px; line-height: 20px;
+}
+.calc-warning svg { flex: 0 0 auto; margin-top: 2px; }
+
+/* Fees title row */
+.calc-fees-title {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--space-md);
+}
+.calc-fees-title .calc-card__title { margin: 0; }
+.calc-fee-cfg {
+  width: 32px; height: 32px; border-radius: 16px; border: none; cursor: pointer;
+  background: var(--surface-highlight); color: var(--text-secondary);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.calc-fee-cfg:hover { color: var(--text); }
+
+/* DCA chart */
+.dca-chart {
+  position: relative; width: 100%; height: 180px; user-select: none;
+  touch-action: none;
+}
+.dca-chart svg { display: block; width: 100%; height: 100%; }
+.dca-chart__y {
+  position: absolute; top: 32px; left: 16px; bottom: 32px;
+  display: flex; flex-direction: column; justify-content: space-between;
+  pointer-events: none; z-index: 1;
+}
+.dca-chart__y span {
+  font-size: 10px; font-weight: 500; color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.dca-chart__legend {
+  position: absolute; bottom: 4px; left: 0; right: 0;
+  display: flex; justify-content: center; gap: var(--space-md);
+  pointer-events: none;
+}
+.dca-chart__legend-item {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--text-tertiary);
+}
+.dca-chart__legend-dot {
+  width: 8px; height: 8px; border-radius: 4px;
+}
+.dca-chart__legend-line {
+  width: 16px; height: 3px; border-radius: 1.5px;
+}
+.dca-chart__tip {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  z-index: 2; pointer-events: none;
+  padding: 8px 12px; border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--inner-border);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-sm);
+  opacity: 0; transition: opacity 0.2s;
+  min-width: 120px;
+}
+.dca-chart__tip.is-on { opacity: 1; }
+.dca-chart__tip-date {
+  font-size: 11px; font-weight: 500; color: var(--text-secondary);
+  text-align: center; margin-bottom: 2px;
+}
+.dca-chart__tip-row {
+  display: flex; align-items: center; gap: 6px; font-size: 11px;
+}
+.dca-chart__tip-dot { width: 6px; height: 6px; border-radius: 3px; flex: 0 0 auto; }
+.dca-chart__tip-label { color: var(--text-tertiary); }
+.dca-chart__tip-val { font-size: 12px; font-weight: 600; color: var(--text); margin-left: auto; }
+.dca-chart__stage {
+  opacity: 0; transform: translateY(-8px);
+  transition: opacity 0.3s cubic-bezier(0.215, 0.61, 0.355, 1),
+              transform 0.6s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+.dca-chart__stage.is-in { opacity: 1; transform: translateY(0); }
+
+/* Nested form sheet */
+.csheet {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.csheet.hidden { display: none; }
+.csheet__backdrop {
+  position: absolute; inset: 0; background: rgba(0,0,0,0.5);
+  opacity: 0; transition: opacity 0.22s ease;
+}
+.csheet.is-open .csheet__backdrop { opacity: 1; }
+.csheet__panel {
+  position: relative; z-index: 1; width: min(100%, 480px);
+  max-height: min(72vh, 560px);
+  background: var(--surface);
+  border: 1px solid var(--inner-border);
+  border-radius: 20px 20px 0 0;
+  display: flex; flex-direction: column;
+  transform: translateY(100%);
+  transition: transform 0.28s cubic-bezier(0.215, 0.61, 0.355, 1);
+  padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -12px 40px rgba(0,0,0,0.3);
+}
+.csheet.is-open .csheet__panel { transform: translateY(0); }
+.csheet__handle {
+  width: 36px; height: 4px; border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 18%, transparent);
+  margin: 8px auto 0;
+}
+.csheet__header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 12px var(--pad-screen) 8px;
+}
+.csheet__title {
+  margin: 0; font-size: 17px; font-weight: 600; color: var(--text);
+}
+.csheet__close {
+  width: 32px; height: 32px; border-radius: var(--radius-pill); border: none;
+  background: var(--bg-tertiary); color: var(--text-secondary);
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.csheet__body {
+  overflow-y: auto; overscroll-behavior: contain; padding: 8px var(--pad-screen) 16px;
+  flex: 1; min-height: 0;
+}
+.csheet__coin {
+  display: flex; align-items: center; gap: var(--space-sm);
+  width: 100%; height: 48px; padding: 0 var(--space-md); border-radius: 12px;
+  border: none; background: transparent; color: var(--text); cursor: pointer;
+  font-family: var(--font); text-align: left;
+}
+.csheet__coin:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.csheet__coin.is-selected { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.csheet__coin img { width: 24px; height: 24px; border-radius: 12px; object-fit: contain; }
+.csheet__coin-sym { flex: 1; font-size: 15px; font-weight: 500; }
+.csheet__coin-check { color: var(--accent); }
+.csheet__fee-section { margin-bottom: var(--space-lg); }
+.csheet__fee-section .mm__seg { width: 100%; display: flex; }
+.csheet__fee-section .mm__seg button { flex: 1; }
+.csheet__fee-label { font-size: 15px; font-weight: 500; color: var(--text); margin: 0 0 4px; }
+.csheet__fee-cap { font-size: 11px; color: var(--text-tertiary); margin: 0 0 var(--space-sm); line-height: 14px; }
+
+/* Month/year date picker in sheet */
+.csheet-date {
+  display: flex; flex-direction: column; gap: 12px;
+}
+.csheet-date__row {
+  display: flex; gap: 8px; align-items: center;
+}
+.csheet-date__row select,
+.csheet-date__row input[type="number"] {
+  flex: 1; height: 44px; border-radius: 12px; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  color: var(--text); font-family: var(--font); font-size: 15px; font-weight: 500;
+  padding: 0 12px; outline: none;
+}
+.csheet-date__row select:focus,
+.csheet-date__row input:focus { border-color: var(--accent); }
+.csheet-date__confirm {
+  margin-top: 8px; width: 100%; height: 48px; border: none; border-radius: 12px;
+  background: var(--accent); color: #fff; font-family: var(--font);
+  font-size: 16px; font-weight: 600; cursor: pointer;
+}
+.csheet-date__confirm:hover { filter: brightness(1.05); }
+.csheet-date input[type="date"] {
+  width: 100%; height: 44px; border-radius: 12px; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  color: var(--text); font-family: var(--font); font-size: 15px; font-weight: 500;
+  padding: 0 12px; outline: none; color-scheme: dark;
+}
+:root[data-theme='light'] .csheet-date input[type="date"] { color-scheme: light; }
+
+/* ── Glossary page (app GlossarySlide) ───────────────────────────────── */
+.glossary {
+  position: relative;
+  min-height: calc(100dvh - var(--topbar-h) - var(--lang-banner-h));
+  display: flex;
+  flex-direction: column;
+}
+/* Floating chrome — same column as .feed (640px), same fill as calc back. */
+.glossary__header {
+  position: fixed;
+  top: calc(var(--topbar-h) + var(--lang-banner-h) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(640px, 100%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 var(--pad-screen);
+  /* Leave room for the alphabet rail inside the content column. */
+  padding-right: calc(var(--pad-screen) + 36px);
+  background: none;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.glossary__header > * { pointer-events: auto; }
+/* .glossary__back styles shared with .calc-page__back above */
+.glossary__search {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 8px;
+  height: 36px; border-radius: var(--radius-pill);
+  /* Same surface as the back button */
+  background: var(--float-chrome-bg);
+  border: 1px solid var(--float-chrome-border);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 0 12px;
+}
+.glossary__search-icon { flex: 0 0 auto; color: var(--float-chrome-muted); }
+.glossary__search-input {
+  flex: 1; min-width: 0;
+  border: none; background: transparent; outline: none;
+  font-family: var(--font); font-size: 15px; color: var(--float-chrome-fg);
+  padding: 0;
+}
+.glossary__search-input::placeholder { color: var(--float-chrome-muted); }
+.glossary__search-input::-webkit-search-cancel-button { display: none; }
+.glossary__search-clear {
+  flex: 0 0 auto; border: none; background: none; color: var(--float-chrome-muted);
+  padding: 0; width: 20px; height: 20px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.glossary__search-clear.hidden { display: none; }
+.glossary__body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.glossary__scroll {
+  flex: 1;
+  min-width: 0;
+  /* Clear the floating back + search (12 + 36 + 16). */
+  padding: calc(12px + 36px + 16px) 0 48px;
+  /* Room for the alphabet rail + expanded selection bubble */
+  padding-right: 52px;
+}
+.glossary__title-block {
+  padding: 8px var(--pad-screen) 8px;
+}
+.glossary__title {
+  margin: 0;
+  font-size: 28px; line-height: 34px; font-weight: 700; color: var(--text);
+}
+.glossary__count {
+  margin: 4px 0 0;
+  font-size: 14px; line-height: 18px; color: var(--text-tertiary);
+}
+.glossary__list { padding-bottom: 24px; }
+
+.glossary-section { margin-top: 20px; }
+.glossary-section:first-child { margin-top: 16px; }
+.glossary-section__letter {
+  padding: 0 var(--pad-screen) 8px;
+  font-size: 17px; line-height: 22px; font-weight: 600; color: var(--text);
+}
+.glossary-section__card {
+  position: relative;
+  margin: 0 var(--pad-screen);
+  background: var(--surface);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+.glossary-section__card::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  border: 1px solid var(--inner-border); border-radius: inherit;
+}
+.glossary-term-item {
+  position: relative;
+  padding: 12px var(--pad-screen);
+}
+.glossary-term-item + .glossary-term-item::before {
+  content: '';
+  position: absolute; top: 0; left: var(--pad-screen); right: var(--pad-screen);
+  height: 1px; background: var(--border);
+}
+.glossary-term-item__name {
+  font-size: 15px; line-height: 20px; font-weight: 600; color: var(--text);
+  margin-bottom: 4px;
+}
+.glossary-term-item__def {
+  font-size: 14px; line-height: 20px; color: var(--text-secondary);
+}
+.glossary-term-item mark {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: inherit; border-radius: 2px; padding: 0 1px;
+}
+
+.glossary-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; padding: 80px 40px 40px; text-align: center;
+  color: var(--text-tertiary);
+}
+.glossary-empty svg { opacity: 0.6; }
+.glossary-empty p { margin: 0; font-size: 15px; line-height: 22px; }
+
+/* Alphabet rail — fills remaining viewport height, evenly spaces A–Z#
+   (app AlphabetIndex: base 20px bubble, selected 44px + pop-out). */
+.glossary__alpha {
+  position: sticky;
+  /* Sit below the floating search chrome so scrubbing stays clear of the pills */
+  top: calc(var(--topbar-h) + var(--lang-banner-h) + 12px + 36px + 12px);
+  align-self: flex-start;
+  height: calc(100dvh - var(--topbar-h) - var(--lang-banner-h) - 12px - 36px - 24px);
+  max-height: calc(100dvh - var(--topbar-h) - var(--lang-banner-h) - 12px - 36px - 24px);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 0;
+  padding: 2px 4px 2px 0;
+  /* Extra left room so the expanded bubble can grow inward without clipping */
+  width: 56px;
+  margin-left: -20px;
+  overflow: visible;
+  user-select: none;
+  touch-action: none;
+  z-index: 4;
+}
+.glossary__alpha[hidden] { display: none; }
+.glossary__alpha-btn {
+  /* Equal flex slots — bubble grows absolutely so distribution stays even */
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  width: 22px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent);
+  opacity: 0.35;
+  transition: font-size 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.15), opacity 0.15s ease;
+}
+.glossary__alpha-btn.is-available {
+  opacity: 1;
+  cursor: pointer;
+}
+.glossary__alpha-btn:not(.is-available) {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+.glossary__alpha-char {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+  transition: transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+}
+/* Bubble (app LetterBubble background: blur + accent overlay) */
+.glossary__alpha-bubble {
+  position: absolute;
+  /* Anchor to the right edge of the rail so expansion pops left (app marginRight) */
+  right: 50%;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  margin-right: -10px;
+  margin-top: -10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.15s ease,
+    width 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.15),
+    height 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.15),
+    margin 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.15),
+    right 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.15),
+    background 0.15s ease;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.glossary__alpha-btn:not(.is-available) .glossary__alpha-bubble {
+  background: color-mix(in srgb, var(--text-tertiary) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-tertiary) 18%, transparent);
+}
+
+/* Scroll-spy: section currently at the top of the viewport */
+.glossary__alpha-btn.is-current {
+  font-size: 12px;
+}
+.glossary__alpha-btn.is-current .glossary__alpha-bubble {
+  opacity: 0.55;
+  width: 26px;
+  height: 26px;
+  margin-right: -13px;
+  margin-top: -13px;
+}
+
+/* Hover (desktop/trackpad) — soft expand like a light press */
+@media (hover: hover) and (pointer: fine) {
+  .glossary__alpha-btn.is-available:hover:not(.is-pressed) {
+    font-size: 14px;
+  }
+  .glossary__alpha-btn.is-available:hover:not(.is-pressed) .glossary__alpha-char {
+    transform: scale(1.05);
+  }
+  .glossary__alpha-btn.is-available:hover:not(.is-pressed) .glossary__alpha-bubble {
+    opacity: 0.7;
+    width: 30px;
+    height: 30px;
+    margin-right: -15px;
+    margin-top: -15px;
+  }
+}
+
+/* Active press / scrub selection — app selectedContainerSize 44 + pop-out left */
+.glossary__alpha-btn.is-pressed {
+  font-size: 20px;
+  opacity: 1;
+  z-index: 2;
+}
+.glossary__alpha-btn.is-pressed .glossary__alpha-char {
+  /* Letter rides with the bubble as it pops left of the rail */
+  transform: translateX(-28px) scale(1.15);
+}
+.glossary__alpha-btn.is-pressed .glossary__alpha-bubble {
+  opacity: 1;
+  width: 44px;
+  height: 44px;
+  /* Pop further left of the rail, like app selectedMarginRight: 48 */
+  right: calc(50% + 28px);
+  margin-right: -22px;
+  margin-top: -22px;
+  background: color-mix(in srgb, var(--accent) 32%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent),
+    0 4px 14px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.glossary__alpha-btn.is-pressed:not(.is-available) .glossary__alpha-bubble {
+  background: color-mix(in srgb, var(--text-tertiary) 32%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-tertiary) 28%, transparent);
+}
+/* is-active keeps a soft highlight after a jump until scroll-spy updates */
+.glossary__alpha-btn.is-active:not(.is-pressed):not(.is-current) {
+  font-size: 12px;
+}
+.glossary__alpha-btn.is-active:not(.is-pressed):not(.is-current) .glossary__alpha-bubble {
+  opacity: 0.55;
+  width: 26px;
+  height: 26px;
+  margin-right: -13px;
+  margin-top: -13px;
+}
+
+/* Skeleton */
+.glossary-skel { padding: 0 var(--pad-screen); }
+.glossary-skel__section { margin-top: 20px; }
+.glossary-skel__letter {
+  width: 24px; height: 24px; border-radius: 4px;
+  background: var(--bg-tertiary); margin-bottom: 8px;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.glossary-skel__card {
+  background: var(--surface); border-radius: var(--radius-card);
+  padding: var(--pad-screen); display: flex; flex-direction: column; gap: 8px;
+}
+.glossary-skel__term {
+  width: 50%; height: 20px; border-radius: 4px; background: var(--bg-tertiary);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.glossary-skel__def {
+  width: 100%; height: 40px; border-radius: 4px; background: var(--bg-tertiary);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* Inline glossary term in feed/lesson content (app RichText dotted underline) */
+.glossary-term {
+  display: inline;
+  margin: 0; padding: 0;
+  border: none; background: none;
+  font: inherit; color: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  text-underline-offset: 2px;
+  cursor: help;
+  border-radius: 2px;
+}
+.glossary-term:hover,
+.glossary-term.is-active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+:root[data-theme='light'] .glossary-term {
+  text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* Glossary tooltip — hover only (no click / no blocking backdrop) */
+.g-tooltip-root {
+  position: fixed; inset: 0; z-index: 120;
+  pointer-events: none;
+}
+.g-tooltip-root[hidden] { display: none; }
+.g-tooltip {
+  position: absolute;
+  max-width: min(280px, calc(100vw - 32px));
+  pointer-events: none; /* pure hover: never steals the mouse */
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 0.14s ease, transform 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.1);
+  will-change: opacity, transform;
+}
+.g-tooltip.is-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.g-tooltip__arrow {
+  position: absolute;
+  width: 14px; height: 7px;
+  left: 50%;
+  transform: translateX(-50%);
+  overflow: hidden;
+}
+.g-tooltip__arrow::before {
+  content: '';
+  position: absolute;
+  width: 10px; height: 10px;
+  background: var(--surface);
+  border: 1px solid var(--inner-border);
+  transform: rotate(45deg);
+  left: 2px;
+}
+.g-tooltip[data-side="above"] .g-tooltip__arrow { bottom: -6px; }
+.g-tooltip[data-side="above"] .g-tooltip__arrow::before { top: -6px; }
+.g-tooltip[data-side="below"] .g-tooltip__arrow { top: -6px; }
+.g-tooltip[data-side="below"] .g-tooltip__arrow::before { bottom: -6px; }
+.g-tooltip__body {
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--inner-border);
+  border-radius: 12px;
+  padding: 8px 12px;
+  box-shadow: var(--shadow-sm);
+}
+.g-tooltip__term {
+  font-size: 14px; line-height: 18px; font-weight: 600; color: var(--text);
+  margin: 0 0 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.g-tooltip__def {
+  margin: 0;
+  font-size: 13px; line-height: 18px; color: var(--text-secondary);
+  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden;
 }

@@ -45,6 +45,9 @@ for (let i = 0; i < posts.length; i += CONCURRENCY) {
   got.forEach((d, j) => { descs[i + j] = d; });
 }
 
+// Map id → lang so hreflang can name the alternate correctly.
+const langById = new Map(posts.map((p) => [p.id, p.lang]));
+
 let written = 0;
 for (const [i, p] of posts.entries()) {
   const desc = descs[i] || FALLBACK_DESC;
@@ -53,6 +56,19 @@ for (const [i, p] of posts.entries()) {
   const image = p.hasCover ? `${WORKER}/web/cover?id=${p.id}` : `${SITE}/og.png`;
   const target = `/?post=${p.id}`;
   const isEn = p.lang === 'EN';
+  const locale = isEn ? 'en_US' : 'pt_BR';
+  const altId = p.altId && langById.has(p.altId) ? p.altId : null;
+  const altLang = altId ? langById.get(altId) : null;
+  const altHreflang = altLang === 'EN' ? 'en' : altLang === 'PT-BR' ? 'pt-BR' : null;
+  const altLocale = altLang === 'EN' ? 'en_US' : altLang === 'PT-BR' ? 'pt_BR' : null;
+
+  // hreflang (self + alt) + og:locale:alternate when a published translation exists.
+  const selfHreflang = isEn ? 'en' : 'pt-BR';
+  const alternateLinks = altId && altHreflang && altLocale
+    ? `<link rel="alternate" hreflang="${selfHreflang}" href="${SITE}/p/${p.id}/">
+<link rel="alternate" hreflang="${altHreflang}" href="${SITE}/p/${altId}/">
+<meta property="og:locale:alternate" content="${altLocale}">`
+    : '';
 
   const html = `<!DOCTYPE html>
 <html lang="${isEn ? 'en' : 'pt-BR'}">
@@ -62,9 +78,10 @@ for (const [i, p] of posts.entries()) {
 <title>${esc(p.title)} — Crypto Bros</title>
 <meta name="description" content="${esc(desc)}">
 <link rel="canonical" href="${SITE}/p/${p.id}/">
+${alternateLinks}
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Crypto Bros">
-<meta property="og:locale" content="${isEn ? 'en_US' : 'pt_BR'}">
+<meta property="og:locale" content="${locale}">
 <meta property="og:title" content="${esc(p.title)}">
 <meta property="og:description" content="${esc(desc)}">
 <meta property="og:url" content="${SITE}/p/${p.id}/">

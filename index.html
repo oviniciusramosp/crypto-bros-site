@@ -19,7 +19,7 @@
     <meta name="twitter:title" content="Crypto Bros" />
     <meta name="twitter:description" content="Feed do Crypto Bros — mercado, estudos e trade cripto." />
     <meta name="twitter:image" content="https://crypto-bros.com/og.png" />
-    <link rel="icon" type="image/png" href="./favicon.png?v=18" />
+    <link rel="icon" type="image/png" href="./favicon.png?v=20" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="theme-color" content="#000000" />
@@ -29,7 +29,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=18" />
+    <link rel="stylesheet" href="./styles.css?v=48" />
     <script>
       (function () {
         try {
@@ -118,6 +118,36 @@
                 <button data-theme-pref="dark"></button>
               </div>
             </div>
+            <div class="menu__section menu__tools-section">
+              <div class="menu__label" id="menu-tools-label">Ferramentas</div>
+              <button type="button" class="menu__tool" id="menu-glossary" role="menuitem">
+                <span class="menu__tool-icon" aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8M8 11h5"/></svg>
+                </span>
+                <span class="menu__tool-text">
+                  <span class="menu__tool-title" id="menu-glossary-title">Glossário</span>
+                  <span class="menu__tool-sub" id="menu-glossary-sub"></span>
+                </span>
+              </button>
+              <button type="button" class="menu__tool" id="menu-dca" role="menuitem">
+                <span class="menu__tool-icon" aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 5 4-9"/></svg>
+                </span>
+                <span class="menu__tool-text">
+                  <span class="menu__tool-title" id="menu-dca-title">Simulador de DCA</span>
+                  <span class="menu__tool-sub" id="menu-dca-sub"></span>
+                </span>
+              </button>
+              <button type="button" class="menu__tool" id="menu-pos" role="menuitem">
+                <span class="menu__tool-icon" aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h8M8 14h4"/></svg>
+                </span>
+                <span class="menu__tool-text">
+                  <span class="menu__tool-title" id="menu-pos-title">Calculadora de Posição</span>
+                  <span class="menu__tool-sub" id="menu-pos-sub"></span>
+                </span>
+              </button>
+            </div>
             <button class="menu__notif" id="menu-notif"></button>
             <button class="menu__logout" id="menu-logout"></button>
           </div>
@@ -126,22 +156,111 @@
 
       <div class="feed">
         <div id="view-feed">
-          <section id="marquee" class="marquee">
+          <section id="marquee" class="marquee" role="button" tabindex="0" aria-haspopup="dialog">
             <div class="marquee__viewport"><div class="marquee__track" id="marquee-track"></div></div>
           </section>
-          <section id="market" class="market"></section>
-          <nav id="tagbar" class="tagbar"></nav>
+          <section id="market" class="market" role="button" tabindex="0" aria-haspopup="dialog"></section>
+          <div class="tagbar-wrap" id="tagbar-wrap" data-at-start="1" data-at-end="1">
+            <button type="button" class="tagbar-nav tagbar-nav--prev" id="tagbar-prev" aria-label="Anterior" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <div class="tagbar-viewport">
+              <nav id="tagbar" class="tagbar" role="tablist" aria-label="Filtros"></nav>
+            </div>
+            <button type="button" class="tagbar-nav tagbar-nav--next" id="tagbar-next" aria-label="Próximo" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+          </div>
           <div id="feed-list" class="feed-list"></div>
           <section id="history" class="history hidden"></section>
         </div>
 
         <div id="view-lessons" class="hidden">
-          <div id="lessons-list"></div>
+          <div class="lessons-layout">
+            <div id="lessons-list" class="lessons-index"></div>
+            <!-- Desktop only: lesson detail as a right panel that pushes the index left.
+                 Tablet/mobile keep the shared modal below. -->
+            <aside id="lesson-panel" class="lesson-panel" aria-hidden="true">
+              <button class="lesson-panel__close" id="lesson-panel-close" aria-label="Fechar">✕</button>
+              <div class="lesson-panel__actions">
+                <button class="modal__action modal__complete" id="lesson-panel-complete">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                </button>
+                <button class="modal__action modal__share" id="lesson-panel-share" aria-label="Compartilhar">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+                </button>
+              </div>
+              <div class="lesson-panel__scroll" id="lesson-panel-content"></div>
+            </aside>
+          </div>
+        </div>
+
+        <!-- Glossary (app GlossarySlide parity) -->
+        <div id="view-glossary" class="hidden">
+          <div class="glossary">
+            <header class="glossary__header">
+              <button type="button" class="glossary__back" id="glossary-back" aria-label="Voltar">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+              </button>
+              <div class="glossary__search" role="search">
+                <svg class="glossary__search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg>
+                <input type="search" id="glossary-search" class="glossary__search-input" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" />
+                <button type="button" class="glossary__search-clear hidden" id="glossary-search-clear" aria-label="Limpar">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+                </button>
+              </div>
+            </header>
+            <div class="glossary__body">
+              <div class="glossary__scroll" id="glossary-scroll">
+                <div class="glossary__title-block">
+                  <h1 class="glossary__title" id="glossary-title">Glossário</h1>
+                  <p class="glossary__count" id="glossary-count"></p>
+                </div>
+                <div id="glossary-list" class="glossary__list"></div>
+              </div>
+              <nav class="glossary__alpha" id="glossary-alpha" aria-label="A–Z" hidden></nav>
+            </div>
+          </div>
+        </div>
+
+        <!-- DCA Simulator (full-page view, same chrome as Glossary) -->
+        <div id="view-dca" class="hidden">
+          <div class="calc-page">
+            <header class="calc-page__header">
+              <button type="button" class="calc-page__back" id="dca-back" aria-label="Voltar">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+              </button>
+            </header>
+            <div class="calc-page__scroll" id="calc-dca-body"></div>
+          </div>
+        </div>
+
+        <!-- Position Calculator (full-page view) -->
+        <div id="view-pos" class="hidden">
+          <div class="calc-page">
+            <header class="calc-page__header">
+              <button type="button" class="calc-page__back" id="pos-back" aria-label="Voltar">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+              </button>
+            </header>
+            <div class="calc-page__scroll" id="calc-pos-body"></div>
+          </div>
         </div>
       </div>
     </main>
 
-    <!-- Post detail modal -->
+    <!-- Glossary term tooltip — hover (desktop) / focus (keyboard) -->
+    <div id="glossary-tooltip-root" class="g-tooltip-root" hidden>
+      <div class="g-tooltip" id="glossary-tooltip" role="tooltip">
+        <div class="g-tooltip__arrow" id="glossary-tooltip-arrow" aria-hidden="true"></div>
+        <div class="g-tooltip__body">
+          <div class="g-tooltip__term" id="glossary-tooltip-term"></div>
+          <p class="g-tooltip__def" id="glossary-tooltip-def"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Post detail modal (also used for lessons on tablet/mobile) -->
     <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal__backdrop" id="modal-backdrop"></div>
       <div class="modal__panel">
@@ -159,14 +278,63 @@
       </div>
     </div>
 
+    <!-- Indicator info modal (Fear & Greed + MVRV) — compact sheet, mirrors app indicator-info -->
+    <div id="indicator-modal" class="imodal hidden" role="dialog" aria-modal="true" aria-labelledby="indicator-modal-title">
+      <div class="imodal__backdrop" id="indicator-modal-backdrop"></div>
+      <div class="imodal__panel">
+        <div class="imodal__header">
+          <h2 id="indicator-modal-title" class="imodal__title"></h2>
+          <button type="button" class="imodal__close" id="indicator-modal-close" aria-label="Fechar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="imodal__scroll" id="indicator-modal-content"></div>
+      </div>
+    </div>
+
+    <!-- Crypto market modal (marquee → chart) — mirrors app/crypto-market.tsx -->
+    <div id="market-modal" class="mm hidden" role="dialog" aria-modal="true" aria-label="Market">
+      <div class="mm__backdrop" id="market-modal-backdrop"></div>
+      <div class="mm__panel">
+        <div class="mm__header">
+          <div class="mm__coin-header" id="mm-header"></div>
+          <button type="button" class="mm__close" id="market-modal-close" aria-label="Fechar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="mm__chart-wrap" id="mm-chart-wrap">
+          <div class="mm__chart" id="mm-chart"></div>
+          <div class="mm__tooltip hidden" id="mm-tooltip"></div>
+        </div>
+        <div class="mm__periods" id="mm-periods" role="tablist"></div>
+        <div class="mm__divider"></div>
+        <div class="mm__grid" id="mm-grid"></div>
+      </div>
+    </div>
+
     <!-- Fullscreen image viewer -->
     <div id="lightbox" class="lightbox hidden">
       <button id="lightbox-close" class="lightbox__close" aria-label="Fechar">✕</button>
       <img id="lightbox-img" src="" alt="" />
     </div>
 
+    <!-- Nested form sheet (coin picker / date / fee config) — overlays calc pages -->
+    <div id="calc-sheet" class="csheet hidden" role="dialog" aria-modal="true" aria-labelledby="calc-sheet-title">
+      <div class="csheet__backdrop" id="calc-sheet-backdrop"></div>
+      <div class="csheet__panel">
+        <div class="csheet__handle" aria-hidden="true"></div>
+        <div class="csheet__header">
+          <h2 id="calc-sheet-title" class="csheet__title"></h2>
+          <button type="button" class="csheet__close" id="calc-sheet-close" aria-label="Fechar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="csheet__body" id="calc-sheet-body"></div>
+      </div>
+    </div>
+
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script src="./i18n.js?v=18" defer></script>
-    <script src="./app.js?v=18" defer></script>
+    <script src="./i18n.js?v=37" defer></script>
+    <script src="./app.js?v=49" defer></script>
   </body>
 </html>

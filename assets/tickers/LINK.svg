@@ -1,0 +1,23 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_5_1675)">
+<path d="M100 200C155.228 200 200 155.228 200 100C200 44.7715 155.228 0 100 0C44.7715 0 0 44.7715 0 100C0 155.228 44.7715 200 100 200Z" fill="#2A5ADA"/>
+<mask id="mask0_5_1675" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="54" y="45" width="92" height="107">
+<path d="M54.1665 45.8333H145.833V151.567H54.1665V45.8333Z" fill="white"/>
+</mask>
+<g mask="url(#mask0_5_1675)">
+<path d="M99.9998 45.8333L90.2998 51.4125L63.8665 66.6875L54.1665 72.2666V125.133L63.8665 130.708L90.5415 145.987L100.242 151.567L109.942 145.987L136.133 130.708L145.833 125.133V72.2666L136.133 66.6875L109.7 51.4125L99.9998 45.8333ZM73.5665 113.979V83.4166L99.9998 68.1458L126.433 83.4208V113.979L99.9998 129.25L73.5665 113.979Z" fill="white"/>
+</g>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M100 0C155.228 0 200 44.7715 200 100C200 155.228 155.228 200 100 200C44.7715 200 0 155.228 0 100C0 44.7715 44.7715 0 100 0ZM100 5C47.5329 5 5 47.5329 5 100C5 152.467 47.5329 195 100 195C152.467 195 195 152.467 195 100C195 47.5329 152.467 5 100 5Z" fill="url(#paint0_linear_5_1675)" style="mix-blend-mode:screen"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_5_1675" x1="-64.7059" y1="17.6829" x2="-43.3322" y2="215.444" gradientUnits="userSpaceOnUse">
+<stop stop-color="white" stop-opacity="0.4"/>
+<stop offset="0.368352" stop-color="white" stop-opacity="0.01"/>
+<stop offset="0.574372" stop-color="white" stop-opacity="0.01"/>
+<stop offset="1" stop-color="white" stop-opacity="0.1"/>
+</linearGradient>
+<clipPath id="clip0_5_1675">
+<rect width="200" height="200" fill="white"/>
+</clipPath>
+</defs>
+</svg>

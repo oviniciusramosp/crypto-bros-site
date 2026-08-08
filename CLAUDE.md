@@ -37,6 +37,7 @@ Repo é **público** porque o GitHub Pages no plano Free exige repo público —
 | `GET /web/lesson`           | Detalhe da aula (blocos completos)                  |
 | `GET/POST/DELETE /web/progress` | Aula concluída, por conta OAuth (D1)            |
 | `GET /web/link-preview`     | og: metadata do bookmark (o browser não raspa cross-origin) |
+| `GET /web/glossary`         | Glossário (termos + alt + definição; por idioma)     |
 | `GET /web/mvrv`             | MVRV Z-Score (proxy CoinMetrics — CORS)             |
 | `GET /web/fng`              | Fear & Greed (proxy alternative.me — CORS)          |
 
