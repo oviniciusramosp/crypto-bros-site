@@ -1459,8 +1459,73 @@ body.modal-open {
 .modal__content pre { background: var(--bg-tertiary); padding: 14px; border-radius: 10px; overflow-x: auto; margin: 12px 0; }
 .modal__content pre code { background: none; padding: 0; }
 .modal__content a { color: var(--accent); text-decoration: none; }
-.modal__content details { margin: 8px 0; }
-.modal__content summary { cursor: pointer; font-weight: 600; }
+/* Notion toggle / toggle-heading (app ToggleBlock) — chevron + title, body indented.
+   Q&A sections in Estudos use heading_3 + is_toggleable; plain toggles use body weight. */
+.modal__content .nb-toggle { margin: 4px 0; }
+.modal__content .nb-toggle--h1 { margin: 24px 0 8px; }
+.modal__content .nb-toggle--h2 { margin: 20px 0 6px; }
+.modal__content .nb-toggle--h3 { margin: 16px 0 4px; }
+.modal__content .nb-toggle__summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+}
+.modal__content .nb-toggle__summary::-webkit-details-marker { display: none; }
+.modal__content .nb-toggle__summary::marker { content: ''; }
+.modal__content .nb-toggle__chev {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  margin-top: 2px;
+  position: relative;
+}
+/* CSS triangle ▶ — rotates 90° when open (app arrowIcon). */
+.modal__content .nb-toggle__chev::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  margin: -5px 0 0 -3px;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 6px solid var(--text);
+  transition: transform 0.2s cubic-bezier(0.33, 1, 0.68, 1);
+  transform-origin: 3px 5px;
+}
+.modal__content .nb-toggle[open] > .nb-toggle__summary .nb-toggle__chev::before {
+  transform: rotate(90deg);
+}
+.modal__content .nb-toggle__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--text);
+}
+.modal__content .nb-toggle--h1 .nb-toggle__title {
+  font-size: 20px; line-height: 26px; font-weight: 700;
+}
+.modal__content .nb-toggle--h2 .nb-toggle__title {
+  font-size: 18px; line-height: 24px; font-weight: 600;
+}
+.modal__content .nb-toggle--h3 .nb-toggle__title {
+  font-size: 16px; line-height: 22px; font-weight: 600;
+}
+.modal__content .nb-toggle__body {
+  margin-left: 28px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+}
+.modal__content .nb-toggle__body > *:first-child { margin-top: 0; }
+.modal__content .nb-toggle__body > *:last-child { margin-bottom: 0; }
 .modal__state { padding: 60px 20px; text-align: center; color: var(--text-secondary); }
 .spinner { width: 30px; height: 30px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 72px auto; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -2255,6 +2320,31 @@ body.modal-open {
 }
 .lesson--skeleton:hover,
 .lesson--skeleton:active { background: none; }
+
+/* Lesson detail skeleton — paint only; geometry from .modal__cover / .modal__body / .lesson-pill. */
+.lesson-detail-skel {
+  pointer-events: none;
+}
+.sk-block--cover {
+  /* .modal__cover: full-bleed 14/9 hero */
+  width: 100%; aspect-ratio: 14 / 9; border-radius: 0; flex: 0 0 auto;
+}
+.sk-block--pill {
+  /* .lesson-pill: ~12px font + 5px vertical pad → ~26px pill */
+  height: 26px; width: 46%; max-width: 220px;
+  border-radius: var(--radius-pill);
+  margin-bottom: 10px; padding: 0;
+  background: var(--surface-highlight) !important;
+  color: transparent !important;
+}
+.sk-block--detail-title {
+  /* .modal__title: font-size 24 / line-height 30 + margin-top 10 */
+  height: 30px; width: 78%; max-width: 420px; margin-top: 10px;
+}
+.sk-block--para {
+  /* .modal__content p: ~14px / line-height 22 */
+  height: 14px; margin: 8px 0; max-width: 100%;
+}
 
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 

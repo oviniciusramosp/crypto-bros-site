@@ -3301,9 +3301,28 @@ function renderBlocks(blocks, skipFirstDivider) {
         if (x || kids) html += `<p>${x}</p>${kids}`;
         break;
       }
-      case 'heading_1': flushHalf(); html += `<h1>${blockText(b)}</h1>`; break;
-      case 'heading_2': flushHalf(); html += `<h2>${blockText(b)}</h2>`; break;
-      case 'heading_3': flushHalf(); html += `<h3>${blockText(b)}</h3>`; break;
+      case 'heading_1':
+      case 'heading_2':
+      case 'heading_3': {
+        // Notion "toggle heading" (Q&A, FAQs) — heading_N with is_toggleable + children.
+        // App routes these through ToggleBlock; plain headings stay static titles.
+        flushHalf();
+        const level = t === 'heading_1' ? 1 : t === 'heading_2' ? 2 : 3;
+        const tag = `h${level}`;
+        const toggleable = !!(b[t] && b[t].is_toggleable);
+        if (toggleable) {
+          html += `<details class="nb-toggle nb-toggle--h${level}">`
+            + `<summary class="nb-toggle__summary">`
+            + `<span class="nb-toggle__chev" aria-hidden="true"></span>`
+            + `<${tag} class="nb-toggle__title">${blockText(b)}</${tag}>`
+            + `</summary>`
+            + `<div class="nb-toggle__body">${kids}</div>`
+            + `</details>`;
+        } else {
+          html += `<${tag}>${blockText(b)}</${tag}>${kids}`;
+        }
+        break;
+      }
       case 'quote': flushHalf(); html += `<blockquote>${blockText(b)}${kids}</blockquote>`; break;
       case 'callout': {
         flushHalf();
@@ -3317,7 +3336,17 @@ function renderBlocks(blocks, skipFirstDivider) {
         html += `<div class="callout" style="background:${cc.bg};color:${cc.text}"><span class="callout-emoji">${icon}</span><div>${blockText(b)}${kids}</div></div>`;
         break;
       }
-      case 'toggle': flushHalf(); html += `<details><summary>${blockText(b)}</summary>${kids}</details>`; break;
+      // Plain Notion toggle list item (not a heading). Same chrome as toggle headings.
+      case 'toggle':
+        flushHalf();
+        html += `<details class="nb-toggle">`
+          + `<summary class="nb-toggle__summary">`
+          + `<span class="nb-toggle__chev" aria-hidden="true"></span>`
+          + `<span class="nb-toggle__title">${blockText(b)}</span>`
+          + `</summary>`
+          + `<div class="nb-toggle__body">${kids}</div>`
+          + `</details>`;
+        break;
       case 'code': {
         // Charts often live in code blocks in Notion (app also accepts this).
         const codePlain = (b.code && b.code.rich_text || []).map((r) => r.plain_text || '').join('');
@@ -3412,6 +3441,13 @@ function renderBlocks(blocks, skipFirstDivider) {
         if (cols.length) html += `<div class="nb-columns">${cols.map((c) => `<div class="nb-column">${renderBlocks(c.children || [])}</div>`).join('')}</div>`;
         break;
       }
+      // Synced blocks are transparent containers in Notion — the page body often lives
+      // entirely inside one (this lesson: 23 kids under a single synced_block). Render
+      // children in place; never invent chrome around them.
+      case 'synced_block':
+        flushHalf();
+        html += kids;
+        break;
       case 'equation':
         flushHalf();
         html += `<pre class="nb-eq"><code>${escapeHtml(b.equation ? b.equation.expression : '')}</code></pre>`;
@@ -4126,6 +4162,34 @@ function renderCompleteButton(completed) {
   }
 }
 
+/**
+ * Detail skeleton that mirrors renderLessonModal geometry (cover + pill + title +
+ * body lines) so the panel/modal does not jump when the lesson arrives.
+ */
+function lessonDetailSkeleton() {
+  const wrap = el('div', 'skeleton lesson-detail-skel');
+  wrap.setAttribute('aria-hidden', 'true');
+  wrap.appendChild(el('div', 'modal__cover sk-block sk-block--cover'));
+
+  const body = el('div', 'modal__body');
+  body.appendChild(el('div', 'lesson-pill sk-block sk-block--pill'));
+  body.appendChild(el('div', 'modal__title sk-block sk-block--detail-title'));
+
+  const content = el('div', 'modal__content');
+  // Vary widths so the placeholder reads as paragraphs, not a uniform stack.
+  const widths = ['100%', '94%', '88%', '100%', '72%', '96%', '90%', '58%'];
+  for (let i = 0; i < widths.length; i++) {
+    const line = el('div', 'sk-block sk-block--para');
+    line.style.width = widths[i];
+    // Extra gap before a "paragraph break" every ~3 lines.
+    if (i > 0 && i % 3 === 0) line.style.marginTop = '18px';
+    content.appendChild(line);
+  }
+  body.appendChild(content);
+  wrap.appendChild(body);
+  return wrap;
+}
+
 function renderLessonModal(lesson) {
   const c = lessonContentEl();
   c.replaceChildren();
@@ -4183,9 +4247,9 @@ async function openLesson(id, fromPop) {
 
   const c = lessonContentEl();
   if (lessonCache[id]) { renderLessonModal(lessonCache[id]); return; }
-  // Show a spinner when opening a different lesson (or an empty surface) so the
-  // user is not reading the previous body while we fetch.
-  if (prevId !== id || !c.childElementCount) c.innerHTML = '<div class="spinner"></div>';
+  // Skeleton when opening a different lesson (or an empty surface) so the user
+  // is not reading the previous body while we fetch.
+  if (prevId !== id || !c.childElementCount) c.replaceChildren(lessonDetailSkeleton());
   try {
     const res = await authFetch(`/web/lesson?id=${encodeURIComponent(id)}`);
     if (!res) return; // session expired
