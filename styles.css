@@ -1820,14 +1820,26 @@ body.modal-open {
   overflow: hidden;
   background: color-mix(in srgb, var(--text) 3%, transparent);
 }
-.nb-chart--half {
-  display: inline-block;
-  width: calc(50% - 6px);
-  vertical-align: top;
-  margin-right: 6px;
+/* Half charts + price widgets are paired into .nb-half-row by renderBlocks
+   (app NotionRenderer groupHalfCharts). Solo half items get a spacer sibling. */
+.nb-half-row {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 8px;
+  margin: 10px 0;
+  min-width: 0;
 }
-@media (max-width: 520px) {
-  .nb-chart--half { width: 100%; margin-right: 0; }
+.nb-half-row > .nb-chart,
+.nb-half-row > .nb-price {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  margin: 0;
+}
+.nb-half-spacer {
+  flex: 1 1 0;
+  min-width: 0;
 }
 .nb-chart__sk {
   width: 100%; height: 100%;
@@ -1837,27 +1849,37 @@ body.modal-open {
 .nb-chart__canvas { width: 100%; height: 100%; }
 .nb-chart__tip { /* reuses .mm__tooltip */ }
 
-.nb-price { margin: 10px 0; }
+/* App PriceWidgetBlock: always half-width (paired), card fills the cell. */
+.nb-price { margin: 10px 0; min-width: 0; }
 .nb-price__card {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 10px 14px; border-radius: 12px;
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; box-sizing: border-box; min-width: 0;
+  padding: 10px 12px; border-radius: 12px;
   background: color-mix(in srgb, var(--text) 4%, transparent);
 }
+/* Beat `.modal__content img` / `.card__preview img` (0,1,1) — same specificity trap
+   as emoji/bookmark: otherwise the coin mark inflates to 100% width and the ticker
+   + price spill outside the card background. */
+.modal__content .nb-price__icon,
+.card__preview .nb-price__icon {
+  width: 24px; height: 24px; margin: 0; border-radius: 12px;
+  object-fit: contain; flex: 0 0 auto;
+}
 .nb-price__icon { width: 24px; height: 24px; border-radius: 12px; object-fit: contain; flex: 0 0 auto; }
-.nb-price__info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.nb-price__sym { font-size: 12px; font-weight: 700; line-height: 14px; letter-spacing: 0.3px; }
-.nb-price__row { display: flex; align-items: baseline; gap: 6px; }
+.nb-price__info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.nb-price__sym { font-size: 13px; font-weight: 700; line-height: 14px; letter-spacing: 0.3px; }
+.nb-price__row { display: flex; align-items: baseline; gap: 3px; min-width: 0; flex-wrap: wrap; }
 .nb-price__val {
-  font-size: 12px; line-height: 14px; color: var(--text-secondary);
+  font-size: 12px; line-height: 15px; color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
-.nb-price__chg { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.nb-price__chg { font-size: 12px; font-weight: 600; line-height: 15px; font-variant-numeric: tabular-nums; }
 .nb-price__unknown { font-size: 12px; color: var(--text-tertiary); }
 .nb-price__sk-icon {
-  width: 24px; height: 24px; border-radius: 12px;
+  width: 24px; height: 24px; border-radius: 12px; flex: 0 0 auto;
   background: var(--surface-highlight); animation: pulse 1.4s ease-in-out infinite;
 }
-.nb-price__sk-text { display: flex; flex-direction: column; gap: 4px; }
+.nb-price__sk-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 auto; }
 .nb-price__sk-line {
   width: 48px; height: 12px; border-radius: 4px;
   background: var(--surface-highlight); animation: pulse 1.4s ease-in-out infinite;

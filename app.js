@@ -1786,9 +1786,17 @@ function chartEmbedPlaceholder(params) {
   const coinId = SYMBOL_TO_COINGECKO[params.asset];
   if (!coinId) return unsupportedWidgetHtml();
   const payload = escapeHtml(JSON.stringify(params));
+  // size:half is paired into .nb-half-row by renderBlocks (class kept for debugging).
   const half = params.size === 'half' ? ' nb-chart--half' : '';
   return `<div class="nb-chart${half}" data-nb-chart="${payload}" role="img" aria-label="${escapeHtml(params.asset)} chart">` +
     `<div class="nb-chart__sk"></div></div>`;
+}
+
+/** App NotionRenderer groupHalfCharts: price widgets always half; charts when size:half. */
+function isHalfWidthWidget(kind, params) {
+  if (kind === 'price') return true;
+  if (kind === 'chart') return !!(params && params.size === 'half');
+  return false;
 }
 
 function priceWidgetPlaceholder(params) {
@@ -3232,12 +3240,42 @@ function calloutIcon(icon) {
 
 function renderBlocks(blocks, skipFirstDivider) {
   let html = '', listType = null, listItems = '', firstDividerSkipped = false;
+  // Pending half-width widget (price or size:half chart) — paired like app groupHalfCharts.
+  let pendingHalf = null; // { kind: 'price'|'chart', html: string }
   const flushList = () => {
     if (listType) { html += `<${listType}>${listItems}</${listType}>`; listType = null; listItems = ''; }
+  };
+  const flushHalf = () => {
+    if (!pendingHalf) return;
+    // Solo half-width: keep left cell + empty spacer (app chartRow + flex:1 spacer).
+    html += `<div class="nb-half-row">${pendingHalf.html}<div class="nb-half-spacer" aria-hidden="true"></div></div>`;
+    pendingHalf = null;
+  };
+  const emitWidget = (kind, params) => {
+    const piece = kind === 'chart'
+      ? chartEmbedPlaceholder(params)
+      : kind === 'price'
+        ? priceWidgetPlaceholder(params)
+        : unsupportedWidgetHtml();
+    if (kind === 'unsupported' || !isHalfWidthWidget(kind, params)) {
+      flushHalf();
+      html += piece;
+      return;
+    }
+    // Only pair same kind: price+price or half-chart+half-chart (app bothPriceWidgets / bothHalfCharts).
+    if (pendingHalf && pendingHalf.kind === kind) {
+      html += `<div class="nb-half-row">${pendingHalf.html}${piece}</div>`;
+      pendingHalf = null;
+    } else {
+      flushHalf();
+      pendingHalf = { kind, html: piece };
+    }
   };
   for (const b of blocks || []) {
     const t = b.type;
     if (t === 'bulleted_list_item' || t === 'numbered_list_item' || t === 'to_do') {
+      // Lists break a half-row (app groupHalfCharts only pairs consecutive half blocks).
+      flushHalf();
       const tag = t === 'numbered_list_item' ? 'ol' : 'ul';
       if (listType && listType !== tag) flushList();
       listType = tag;
@@ -3254,20 +3292,21 @@ function renderBlocks(blocks, skipFirstDivider) {
         const plain = plainFromBlock(b);
         const widget = tryParseWidget(plain);
         if (widget) {
-          if (widget.kind === 'chart') html += chartEmbedPlaceholder(widget.params);
-          else if (widget.kind === 'price') html += priceWidgetPlaceholder(widget.params);
-          else html += unsupportedWidgetHtml();
+          if (widget.kind === 'chart' || widget.kind === 'price') emitWidget(widget.kind, widget.params);
+          else { flushHalf(); html += unsupportedWidgetHtml(); }
           break;
         }
+        flushHalf();
         const x = blockText(b);
         if (x || kids) html += `<p>${x}</p>${kids}`;
         break;
       }
-      case 'heading_1': html += `<h1>${blockText(b)}</h1>`; break;
-      case 'heading_2': html += `<h2>${blockText(b)}</h2>`; break;
-      case 'heading_3': html += `<h3>${blockText(b)}</h3>`; break;
-      case 'quote': html += `<blockquote>${blockText(b)}${kids}</blockquote>`; break;
+      case 'heading_1': flushHalf(); html += `<h1>${blockText(b)}</h1>`; break;
+      case 'heading_2': flushHalf(); html += `<h2>${blockText(b)}</h2>`; break;
+      case 'heading_3': flushHalf(); html += `<h3>${blockText(b)}</h3>`; break;
+      case 'quote': flushHalf(); html += `<blockquote>${blockText(b)}${kids}</blockquote>`; break;
       case 'callout': {
+        flushHalf();
         // The icon is not always a unicode emoji. Falling back to 💡 for a custom emoji does
         // not LOOK like a bug — it looks like a lightbulb — so 43 `:circle-info:` icons were
         // silently replaced by one.
@@ -3278,38 +3317,41 @@ function renderBlocks(blocks, skipFirstDivider) {
         html += `<div class="callout" style="background:${cc.bg};color:${cc.text}"><span class="callout-emoji">${icon}</span><div>${blockText(b)}${kids}</div></div>`;
         break;
       }
-      case 'toggle': html += `<details><summary>${blockText(b)}</summary>${kids}</details>`; break;
+      case 'toggle': flushHalf(); html += `<details><summary>${blockText(b)}</summary>${kids}</details>`; break;
       case 'code': {
         // Charts often live in code blocks in Notion (app also accepts this).
         const codePlain = (b.code && b.code.rich_text || []).map((r) => r.plain_text || '').join('');
         const codeWidget = tryParseWidget(codePlain);
         if (codeWidget) {
-          if (codeWidget.kind === 'chart') html += chartEmbedPlaceholder(codeWidget.params);
-          else if (codeWidget.kind === 'price') html += priceWidgetPlaceholder(codeWidget.params);
-          else html += unsupportedWidgetHtml();
+          if (codeWidget.kind === 'chart' || codeWidget.kind === 'price') emitWidget(codeWidget.kind, codeWidget.params);
+          else { flushHalf(); html += unsupportedWidgetHtml(); }
           break;
         }
+        flushHalf();
         html += `<pre><code>${escapeHtml(codePlain)}</code></pre>`;
         break;
       }
       case 'chart_embed':
         // Pre-transformed shape (if API ever emits it)
-        if (b.chartParams) html += chartEmbedPlaceholder(b.chartParams);
-        else html += unsupportedWidgetHtml();
+        if (b.chartParams) emitWidget('chart', b.chartParams);
+        else { flushHalf(); html += unsupportedWidgetHtml(); }
         break;
       case 'price_widget':
-        if (b.priceWidgetParams) html += priceWidgetPlaceholder(b.priceWidgetParams);
-        else html += unsupportedWidgetHtml();
+        if (b.priceWidgetParams) emitWidget('price', b.priceWidgetParams);
+        else { flushHalf(); html += unsupportedWidgetHtml(); }
         break;
       case 'unsupported_widget':
+        flushHalf();
         html += unsupportedWidgetHtml();
         break;
       case 'divider':
         // The first divider is the preview/full boundary (marks "Continuar Lendo") — never rendered.
         if (skipFirstDivider && !firstDividerSkipped) { firstDividerSkipped = true; break; }
+        flushHalf();
         html += '<hr class="nb-hr"/>';
         break;
       case 'image': {
+        flushHalf();
         const u = imgUrl(b.image);
         if (u) {
           // Theme-gating (app parity — ImageBlock.tsx): a caption containing [light] means
@@ -3333,6 +3375,7 @@ function renderBlocks(blocks, skipFirstDivider) {
         break;
       }
       case 'video': {
+        flushHalf();
         const v = b.video, u = v ? (v.external ? v.external.url : v.file ? v.file.url : null) : null;
         if (u) {
           const yt = youtubeEmbed(u);
@@ -3343,11 +3386,13 @@ function renderBlocks(blocks, skipFirstDivider) {
         break;
       }
       case 'bookmark': case 'embed': case 'link_preview': {
+        flushHalf();
         const d = b[t], u = d && d.url;
         if (u) html += bookmarkHtml(u, d.caption);
         break;
       }
       case 'table': {
+        flushHalf();
         const rows = (b.children || []).filter((r) => r.type === 'table_row');
         if (rows.length) {
           const hasHeader = b.table && b.table.has_column_header;
@@ -3362,15 +3407,20 @@ function renderBlocks(blocks, skipFirstDivider) {
         break;
       }
       case 'column_list': {
+        flushHalf();
         const cols = (b.children || []).filter((c) => c.type === 'column');
         if (cols.length) html += `<div class="nb-columns">${cols.map((c) => `<div class="nb-column">${renderBlocks(c.children || [])}</div>`).join('')}</div>`;
         break;
       }
-      case 'equation': html += `<pre class="nb-eq"><code>${escapeHtml(b.equation ? b.equation.expression : '')}</code></pre>`; break;
+      case 'equation':
+        flushHalf();
+        html += `<pre class="nb-eq"><code>${escapeHtml(b.equation ? b.equation.expression : '')}</code></pre>`;
+        break;
       default: break; // chart_embed / price_widget / unsupported_widget → app-only, skipped
     }
   }
   flushList();
+  flushHalf();
   return html;
 }
 
