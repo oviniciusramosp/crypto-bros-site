@@ -41,7 +41,23 @@
   --reading-panel-width: 680px;
   /* Gap topbar→cards (= panel bottom inset). JS measures chrome into the --*-h vars. */
   --lesson-panel-gap: 20px;
-  --topbar-h: 69px;
+  /* Shared top inset for every main view (feed / lessons / glossary / calculators). */
+  --page-pad-top: 12px;
+  /* Title → subtitle (calc) and title → search (glossary) share this gap. */
+  --page-title-gap: 12px;
+  /* Was the sticky topbar; nav lives in the sidebar now. Kept at 0 for calc/glossary chrome. */
+  --topbar-h: 0px;
+  --sidebar-w: 280px;
+  --sidebar-btn: 44px;
+  /* Icon pad: gap between icon and label = padding-left of the row. */
+  --sidebar-item-pad-x: 11px;
+  /* Avatar matches collapsed nav button size; no internal card padding. */
+  --user-avatar: var(--sidebar-btn);
+  --user-card-size: var(--user-avatar);
+  /* Rail = side pad 12 + button/avatar 44 + side pad 12. */
+  --sidebar-rail-w: calc(12px + var(--sidebar-btn) + 12px); /* 68px */
+  --sidebar-ease: cubic-bezier(0.33, 1, 0.68, 1);
+  --sidebar-dur: 0.3s;
   --lang-banner-h: 0px;
   --space-xs: 4px;
   --space-sm: 8px;
@@ -85,11 +101,11 @@
   font-display: block;
 }
 .cbi { font-family: 'cryptobros-icons'; font-style: normal; font-weight: normal; line-height: 1; speak: never; }
-.cbi--btc::before { content: '\f003'; }                            /* btc-lg-outline */
-.viewbar button.active .cbi--btc::before { content: '\f002'; }     /* btc-lg (filled) */
+/* Sidebar nav always uses the solid glyph; color handles idle/active. */
+.cbi--btc::before { content: '\f002'; }                            /* btc-lg (filled) */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html { color-scheme: dark; }
+html { color-scheme: dark; max-width: 100%; }
 :root[data-theme='light'] { color-scheme: light; }
 body {
   background: var(--bg);
@@ -99,6 +115,10 @@ body {
   line-height: 22px;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  max-width: 100%;
+  /* clip (not hidden): avoids a scroll containment that breaks position:sticky
+     (desktop lesson panel, etc.) while still killing horizontal bleed. */
+  overflow-x: clip;
 }
 .hidden { display: none !important; }
 
@@ -143,32 +163,13 @@ body {
 .login__lang { width: 300px; max-width: 100%; margin-top: 4px; }
 
 /* Locale suggestion banner (Apple-style). Site-wide offer sticks at the top of the page.
-   Post-translation offer is a bottom bar so it never fights the topbar or the modal's
-   close/share buttons (see .lang-banner--over-modal). */
+   Post-translation offer lives inside the post modal as .modal__lang-footer. */
 .lang-banner {
   position: sticky; top: 0; z-index: 40;
   display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap;
   padding: 10px 44px 10px 20px;
   background: var(--surface); border-bottom: 1px solid var(--border);
   font-size: 13px; color: var(--text-secondary); text-align: center;
-}
-/* "This post is also available in English." — docks to the bottom of the viewport,
-   above the modal (z-index 150 > 100), clear of topbar + modal chrome at the top. */
-.lang-banner--over-modal {
-  position: fixed;
-  left: 0; right: 0;
-  top: auto;
-  bottom: 0;
-  z-index: 150;
-  padding: 12px 44px calc(12px + env(safe-area-inset-bottom, 0px)) 20px;
-  border-bottom: none;
-  border-top: 1px solid var(--border);
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
-}
-/* Leave room at the bottom of the open post modal so the last lines are not
-   hidden behind the translation bar. Height is measured into --post-lang-banner-h. */
-body.has-post-lang-banner .modal__scroll {
-  padding-bottom: calc(var(--post-lang-banner-h, 64px) + 12px);
 }
 .lang-banner__text { color: var(--text); }
 .lang-banner__btn {
@@ -180,39 +181,722 @@ body.has-post-lang-banner .modal__scroll {
   border: none; background: none; color: var(--text-tertiary); font-size: 14px; cursor: pointer; padding: 6px;
 }
 
-/* ── Top bar ────────────────────────────────────────────────────────── */
-.topbar {
-  /* Stick below the site lang banner when it is visible (JS sets --lang-banner-h). */
-  position: sticky; top: var(--lang-banner-h); z-index: 10;
-  display: flex; align-items: center; gap: var(--space-sm);
-  padding: var(--space-md) var(--pad-screen);
-  background: color-mix(in srgb, var(--bg) 85%, transparent);
+/* Body scroll lock while any modal is open — blocks rubber-band overscroll on the page. */
+body.modal-open {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* Sidebar nav icons: solid light-gray idle → solid orange selected (app tab-bar colors). */
+
+/* ── App shell + sidebar (iPad-style) ────────────────────────────────
+   Phone/tablet: sticky top bar (menu + logo) + overlay drawer.
+   Desktop ≥1024: in-flow, collapsible icon rail. */
+#app:not(.hidden) {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+}
+.app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  align-items: stretch;
+  position: relative;
+  overflow-x: clip;
+}
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+/* Phone/tablet: drawer is fixed overlay — don’t let it inflate the flex row. */
+@media (max-width: 1023px) {
+  .app-body {
+    display: block; /* single column; sidebar is position:fixed */
+  }
+  .sidebar {
+    /* already fixed; explicit so it never contributes to scroll width */
+    position: fixed;
+    flex: none;
+  }
+  .app-shell {
+    width: 100%;
+    max-width: 100%;
+  }
+  .feed {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: clip;
+  }
+  .mobile-topbar {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+/* Mobile/tablet top bar — menu (left) + wordmark. Desktop hides this. */
+.mobile-topbar {
+  position: sticky;
+  top: var(--lang-banner-h);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding:
+    max(8px, env(safe-area-inset-top, 0px))
+    12px
+    8px
+    max(8px, env(safe-area-inset-left, 0px));
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
 }
-.topbar__brand {
-  display: flex; align-items: center; gap: var(--space-sm); min-width: 0;
-  flex: 1; /* brand and user each take a share, so the viewbar lands dead centre */
-  font-weight: 700; font-size: 20px; letter-spacing: -0.3px;
+.mobile-topbar__menu {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.12s;
 }
-.topbar__brand img { width: 28px; height: 28px; border-radius: 7px; flex: 0 0 auto; }
-.topbar__brand span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.topbar .viewbar { flex: 0 0 auto; margin: 0; }
-.topbar .user { flex: 1; display: flex; justify-content: flex-end; }
-.viewbar button svg { width: 14px; height: 14px; flex: 0 0 auto; }
-.viewbar button .cbi { font-size: 14px; flex: 0 0 auto; }
-/* Ionicons pairs: outline while idle, solid once selected — the app's tab-bar behaviour. */
-.ion--book .ion__solid { display: none; }
-.viewbar button.active .ion--book .ion__outline { display: none; }
-.viewbar button.active .ion--book .ion__solid { display: inline; }
-/* Narrow screens: the wordmark is the first thing to go — the logo still identifies us,
-   and the view switcher is what people actually need to reach. */
-@media (max-width: 560px) {
-  .topbar__brand span { display: none; }
-  .topbar__brand { flex: 0 0 auto; }
-  .topbar .user { flex: 1; }
-  .topbar .viewbar { margin-left: auto; }
+.mobile-topbar__menu svg { width: 22px; height: 22px; display: block; }
+.mobile-topbar__menu:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.mobile-topbar__menu:active { transform: scale(0.96); }
+.mobile-topbar__brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+/* Same height as the wordmark inside the sidebar brand. */
+.mobile-topbar__brand .sidebar__wordmark {
+  height: 22px;
+  max-width: min(180px, 100%);
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  background: rgba(0, 0, 0, 0.45);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  animation: sidebar-backdrop-in 0.22s ease;
+}
+@keyframes sidebar-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: min(var(--sidebar-w), 88vw);
+  max-width: 320px;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding:
+    calc(12px + env(safe-area-inset-top, 0px))
+    12px
+    calc(16px + env(safe-area-inset-bottom, 0px));
+  gap: 4px;
+  background: color-mix(in srgb, var(--surface) 96%, var(--bg));
+  border-right: 1px solid var(--border);
+  /* Footer popover must escape — scroll lives on .sidebar__nav only. */
+  overflow: visible;
+  z-index: 50;
+  /* Phone/tablet: off-canvas drawer */
+  position: fixed;
+  top: 0;
+  left: 0;
+  transform: translateX(-105%);
+  transition: transform 0.3s cubic-bezier(0.33, 1, 0.68, 1);
+  box-shadow: none;
+}
+#app.is-sidebar-open .sidebar {
+  transform: translateX(0);
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.28);
+}
+
+.sidebar__top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: var(--sidebar-btn);
+  padding: 0 0 8px;
+  margin-bottom: 4px;
+  flex: 0 0 auto;
+}
+/* Same size collapsed and expanded (matches nav row height). */
+.sidebar__toggle {
+  flex: 0 0 auto;
+  width: var(--sidebar-btn);
+  height: var(--sidebar-btn);
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.sidebar__toggle svg { width: 20px; height: 20px; display: block; }
+.sidebar__toggle:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+.sidebar__toggle:active { transform: scale(0.96); }
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  transition:
+    opacity 0.18s ease,
+    width var(--sidebar-dur) var(--sidebar-ease),
+    flex-basis var(--sidebar-dur) var(--sidebar-ease),
+    max-width var(--sidebar-dur) var(--sidebar-ease);
+}
+/* Full CryptoBros wordmark (replaces icon + text). Theme-swapped pair. */
+.sidebar__wordmark {
+  display: block;
+  height: 22px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+  object-position: left center;
+  flex: 0 1 auto;
+}
+/* Default site theme is dark → white wordmark. */
+.sidebar__wordmark--for-light { display: none; }
+.sidebar__wordmark--for-dark { display: block; }
+:root[data-theme='light'] .sidebar__wordmark--for-light { display: block; }
+:root[data-theme='light'] .sidebar__wordmark--for-dark { display: none; }
+.sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  /* Fixed item spacing — same collapsed and expanded. */
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.sidebar__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start; /* always left — never center in the rail */
+  /* gap icon→label = padding-left, so the label sits on the same grid as the icon inset */
+  gap: var(--sidebar-item-pad-x);
+  width: 100%;
+  height: var(--sidebar-btn);
+  min-height: var(--sidebar-btn);
+  max-height: var(--sidebar-btn);
+  box-sizing: border-box;
+  flex: 0 0 var(--sidebar-btn);
+  padding: 0 var(--sidebar-item-pad-x);
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  /* Label: same gray as “Sair” (--text-secondary). Icons: lighter gray. */
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+  /* Labels never unmount — they only clip as the row (and rail) width changes. */
+  overflow: hidden;
+  transition: background 0.15s, color 0.15s;
+}
+.sidebar__item:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+}
+.sidebar__item:hover .sidebar__icon {
+  color: var(--text-secondary);
+}
+.sidebar__item:active { transform: scale(0.99); }
+.sidebar__item.active {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.sidebar__item.active .sidebar__icon {
+  color: var(--accent);
+}
+.sidebar__icon {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  transition: color 0.15s;
+}
+.sidebar__icon svg { width: 20px; height: 20px; display: block; }
+.sidebar__icon .cbi { font-size: 18px; line-height: 1; }
+.sidebar__icon .ion,
+.sidebar__icon .fb { width: 20px; height: 20px; display: block; }
+/* Label stays in the layout; parent overflow clips it as the rail narrows/widens. */
+.sidebar__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+.sidebar__divider {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--border);
+  flex: 0 0 auto;
+}
+
+/* Footer: theme + user row (popover holds notif / lang / logout).
+   No divider above theme — only between theme and the user card. */
+.sidebar__footer {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  overflow: visible;
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 6;
+}
+.sidebar__footer-theme {
+  min-width: 0;
+}
+/* Expanded: 3-way segment. Collapsed: single cycle button (see desktop media). */
+.menu__theme-cycle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  /* Match .menu__seg height: 3+6+16+6+3 ≈ 34px */
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--seg-track);
+  color: var(--seg-active-text);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.12s;
+}
+.menu__theme-cycle svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+.menu__theme-cycle:hover {
+  background: color-mix(in srgb, var(--text) 8%, var(--seg-track));
+}
+.menu__theme-cycle:active { transform: scale(0.98); }
+.menu__theme-cycle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Cycle button always shows the solid glyph for the active theme. */
+.menu__theme-cycle .theme-ico .theme-ico__outline { display: none; }
+.menu__theme-cycle .theme-ico .theme-ico__solid { display: block; }
+.sidebar__user-wrap {
+  position: relative;
+  min-width: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+/* Full-width user row — pill shape, no internal padding; avatar = collapsed btn size. */
+.menu__user--trigger {
+  width: 100%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font);
+  display: flex;
+  align-items: center;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  border-bottom: none;
+  box-shadow: none;
+  gap: 10px; /* keep avatar↔text gap; clip handles collapse, not gap collapse */
+  overflow: hidden; /* clips name/email/chev as rail width shrinks */
+  box-sizing: border-box;
+  transition: background 0.15s;
+}
+.menu__user--trigger:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.menu__user--trigger:hover .menu__user-avatar {
+  opacity: 0.78;
+}
+.menu__user--trigger[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.menu__user--trigger[aria-expanded='true'] .menu__user-chev {
+  transform: rotate(180deg);
+}
+.sidebar__footer .menu__user-avatar {
+  width: var(--user-avatar);
+  height: var(--user-avatar);
+  flex: 0 0 var(--user-avatar);
+  transition: opacity 0.15s;
+}
+/* Name/email stay in the layout; the trigger’s overflow clips them with rail width. */
+.sidebar__footer .menu__user-info {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+/* Chevron sits in the pill’s rounded end — sized/centered like the avatar cap. */
+.menu__user-chev {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  margin-right: 8px;
+  color: var(--text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  transition: transform 0.2s ease;
+}
+.menu__user-chev svg { width: 18px; height: 18px; display: block; }
+
+/* Popover anchored above the user row.
+   Vertical gap matches .sidebar__nav (4px between rail items). */
+.user-popover {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px; /* equal on all 4 sides */
+  border-radius: 14px;
+  background: var(--surface);
+  border: none;
+  box-shadow: var(--shadow-sm); /* same as collapsed rail tooltips */
+}
+.user-popover.hidden { display: none !important; }
+/* “Idioma” label sits closer to the segmented control. */
+.user-popover .menu__section {
+  gap: 4px;
+}
+.user-popover .menu__label {
+  margin: 0;
+  line-height: 1.2;
+}
+
+/* Notif: full-row button (same chrome as “Sair”) + orange iOS-style switch. */
+.menu__switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 8px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.menu__switch-row:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+}
+.menu__switch-row:active { transform: scale(0.99); }
+.menu__switch-row:disabled {
+  opacity: 0.55;
+  cursor: default;
+  transform: none;
+}
+.menu__switch-row:disabled:hover {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.menu__switch-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.menu__switch-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  display: block;
+  color: inherit;
+}
+.menu__switch-label {
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 500;
+  color: inherit;
+  min-width: 0;
+  line-height: 18px;
+}
+.menu__switch {
+  --switch-w: 46px;
+  --switch-h: 28px;
+  --knob: 22px;
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--switch-w);
+  height: var(--switch-h);
+  border: none;
+  border-radius: 999px;
+  padding: 0;
+  background: color-mix(in srgb, var(--text) 18%, transparent);
+  pointer-events: none; /* whole row is the hit target */
+  transition: background 0.2s ease;
+}
+.menu__switch-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: var(--knob);
+  height: var(--knob);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s ease;
+}
+.menu__switch[aria-checked='true'] {
+  background: var(--accent);
+}
+.menu__switch[aria-checked='true'] .menu__switch-knob {
+  transform: translateX(calc(var(--switch-w) - var(--knob) - 6px));
+}
+.menu__switch-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Logout row inside popover — gray, not accent/error. */
+.menu__logout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 10px 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+.menu__logout svg { width: 18px; height: 18px; flex: 0 0 auto; display: block; }
+.menu__logout:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+}
+.menu__logout:active { transform: scale(0.99); }
+
+/* ── Desktop: fixed rail (sticky breaks under overflow-x:hidden ancestors) ─ */
+@media (min-width: 1024px) {
+  .mobile-topbar { display: none !important; }
+  .sidebar-backdrop { display: none !important; }
+
+  .app-body {
+    display: block; /* sidebar is fixed; shell is the only in-flow column */
+  }
+  .sidebar {
+    position: fixed;
+    top: var(--lang-banner-h);
+    left: 0;
+    bottom: auto;
+    height: calc(100dvh - var(--lang-banner-h));
+    max-height: calc(100dvh - var(--lang-banner-h));
+    width: var(--sidebar-w);
+    max-width: none;
+    flex: none;
+    transform: none !important;
+    box-shadow: none !important;
+    padding-top: 12px;
+    padding-bottom: 16px;
+    overflow: visible;
+    transition: width var(--sidebar-dur) var(--sidebar-ease);
+  }
+  /* Content clears the fixed rail; margin tracks expanded/collapsed width. */
+  .app-shell {
+    margin-left: var(--sidebar-w);
+    width: auto;
+    max-width: none;
+    transition: margin-left var(--sidebar-dur) var(--sidebar-ease);
+  }
+
+  /* ── Collapsed rail: width first; icons stay left-aligned ───────────── */
+  #app.is-sidebar-collapsed {
+    --sidebar-w: var(--sidebar-rail-w);
+  }
+
+  /* Items stay full rail width + left-aligned. Labels clip via overflow:hidden
+     on the row (never unmounted). Tooltips use position:fixed + --tip-x/y. */
+  #app.is-sidebar-collapsed .sidebar__item:hover,
+  #app.is-sidebar-collapsed .sidebar__item:focus-visible {
+    z-index: 90;
+  }
+
+  /* Brand clips with the width; stays left of the top row. */
+  #app.is-sidebar-collapsed .sidebar__brand {
+    flex: 0 0 0;
+    width: 0;
+    min-width: 0;
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+    transition:
+      opacity 0.12s ease,
+      width var(--sidebar-dur) var(--sidebar-ease),
+      flex-basis var(--sidebar-dur) var(--sidebar-ease),
+      max-width var(--sidebar-dur) var(--sidebar-ease);
+  }
+
+  /* Footer: theme becomes a single cycle button; divider stays above user card. */
+  #app.is-sidebar-collapsed .sidebar__footer {
+    align-items: stretch;
+    border-top-color: transparent;
+  }
+  #app.is-sidebar-collapsed .sidebar__footer-theme .menu__seg--icons {
+    display: none;
+  }
+  #app.is-sidebar-collapsed .sidebar__footer-theme .menu__theme-cycle {
+    display: inline-flex;
+    /* Same height as expanded segment control (not nav square size). */
+    width: 100%;
+    height: 34px;
+    min-height: 34px;
+    margin-inline: 0;
+  }
+  /*
+    User card: full rail width, left-aligned. Avatar size = content width when
+    collapsed, so name/chev clip on the right without changing avatar↔text gap.
+  */
+  #app.is-sidebar-collapsed .sidebar__footer .menu__user--trigger {
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    justify-content: flex-start;
+    align-items: center;
+    border: none;
+    box-shadow: none;
+    border-radius: var(--radius-pill);
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+  /* Keep divider between theme cycle and user card. */
+  #app.is-sidebar-collapsed .sidebar__user-wrap {
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
+  #app.is-sidebar-collapsed .user-popover {
+    left: calc(100% + 10px);
+    right: auto;
+    bottom: 0;
+    width: 260px;
+  }
+
+  /* Tooltips while the rail is collapsed (labels are only clipped, not removed). */
+  #app.is-sidebar-collapsed .sidebar__item[data-label]:hover::after,
+  #app.is-sidebar-collapsed .sidebar__item[data-label]:focus-visible::after,
+  #app.is-sidebar-collapsed .menu__theme-cycle[data-label]:hover::after,
+  #app.is-sidebar-collapsed .menu__theme-cycle[data-label]:focus-visible::after {
+    content: attr(data-label);
+    position: fixed;
+    left: var(--tip-x, calc(var(--sidebar-rail-w) + 8px));
+    top: var(--tip-y, 50%);
+    transform: translateY(-50%);
+    z-index: 200;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: var(--surface-highlight);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  #app:not(.is-sidebar-collapsed) .sidebar__item::after,
+  #app:not(.is-sidebar-collapsed) .menu__theme-cycle::after {
+    content: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .sidebar__item,
+  .sidebar__label,
+  .sidebar__toggle,
+  .sidebar__brand,
+  .menu__user--trigger {
+    transition: none !important;
+  }
+  .sidebar-backdrop {
+    animation: none;
+  }
 }
 .icon-btn {
   width: 36px; height: 36px; border: none; border-radius: var(--radius-pill);
@@ -222,36 +906,35 @@ body.has-post-lang-banner .modal__scroll {
 }
 .icon-btn:active { opacity: 0.7; }
 
-/* User avatar + popover menu */
-.user { position: relative; }
-/* Avatar + hamburger in one pill — both are the same trigger. */
-.user-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 36px; padding: 2px 8px 2px 2px; border-radius: var(--radius-pill);
-  border: 1px solid var(--inner-border); background: var(--bg-tertiary);
-  cursor: pointer; transition: background 0.15s;
-}
-.user-btn:hover { background: var(--surface-highlight); }
-.user-btn__avatar {
-  width: 30px; height: 30px; border-radius: var(--radius-pill); overflow: hidden; flex: 0 0 auto;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.user-btn__caret { width: 18px; height: 18px; color: var(--text-secondary); flex: 0 0 auto; }
-.user-btn[aria-expanded='true'] { background: var(--surface-highlight); }
-.user-btn img, .topbar-avatar { width: 100%; height: 100%; object-fit: cover; border-radius: var(--radius-pill); }
+/* User avatars (sidebar footer) */
+.topbar-avatar { width: 100%; height: 100%; object-fit: cover; border-radius: var(--radius-pill); }
 /* User avatar placeholder = initials on grey (per app request) */
 .topbar-avatar.avatar--ph { background: #71717A; color: #fff; font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
-.menu__user { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
-.menu__user-avatar { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; flex: 0 0 auto; }
+.menu__user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: none;
+  border-bottom: none;
+  box-shadow: none;
+}
+/* Higher specificity than .menu__user alone — no internal padding. */
+.menu__user.menu__user--trigger {
+  padding: 0;
+  border-radius: var(--radius-pill);
+  box-sizing: border-box;
+}
+.menu__user-avatar {
+  width: var(--user-avatar, 44px);
+  height: var(--user-avatar, 44px);
+  border-radius: 50%;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
 .menu__user-avatar .topbar-avatar.avatar--ph { font-size: 15px; }
 .menu__user-info { min-width: 0; }
 .menu__user-name { font-size: 14px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu__user-email { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.menu {
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; width: 300px; max-width: calc(100vw - 24px);
-  background: var(--surface); border: 1px solid var(--inner-border); border-radius: 14px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.35); padding: 12px; display: flex; flex-direction: column; gap: 12px;
-}
 .menu__section { display: flex; flex-direction: column; gap: 8px; }
 .menu__label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-tertiary); }
 .menu__coins { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -267,16 +950,24 @@ body.has-post-lang-banner .modal__scroll {
 }
 .menu__seg button svg { width: 13px; height: 13px; flex: 0 0 auto; }
 .menu__seg button.active { background: var(--seg-active); color: var(--seg-active-text); font-weight: 600; }
-.menu__notif {
-  border: none; background: var(--bg-tertiary); color: var(--text); padding: 10px; border-radius: 10px;
-  font-family: var(--font); font-size: 14px; font-weight: 600; cursor: pointer; text-align: center;
-  display: flex; align-items: center; justify-content: center; gap: 6px;
+/* Theme toggle: icons only — same track/height as language seg; solid when active. */
+.menu__seg--icons button {
+  padding: 6px 10px; /* match .menu__seg button */
+  min-height: 0;
 }
-.menu__notif:disabled { color: var(--text-tertiary); cursor: default; }
-.menu__notif.on { color: var(--success); }
-.menu__logout {
-  border: none; background: var(--bg-tertiary); color: var(--error); padding: 10px; border-radius: 10px;
-  font-family: var(--font); font-size: 14px; font-weight: 600; cursor: pointer; text-align: center;
+.menu__seg--icons button svg {
+  width: 16px;
+  height: 16px;
+}
+.menu__seg--icons .theme-ico .theme-ico__solid { display: none; }
+.menu__seg--icons button.active .theme-ico .theme-ico__outline { display: none; }
+.menu__seg--icons button.active .theme-ico .theme-ico__solid { display: block; }
+/* System icon: invert-mode on phone/tablet, laptop on desktop. */
+.theme-ico--system .theme-ico__bp-desktop { display: none; }
+.theme-ico--system .theme-ico__bp-mobile { display: block; }
+@media (min-width: 1024px) {
+  .theme-ico--system .theme-ico__bp-mobile { display: none; }
+  .theme-ico--system .theme-ico__bp-desktop { display: block; }
 }
 
 /* History (Mais antigos) */
@@ -329,8 +1020,6 @@ body.has-post-lang-banner .modal__scroll {
    index compresses left and a sticky detail panel slides in from the right.
    Tablet/mobile keep the centered modal (see .modal below). */
 
-.viewbar { margin: 20px var(--pad-screen) 0; }
-
 .lessons-layout { display: block; }
 .lessons-index { min-width: 0; }
 /* Panel is desktop-only; never paint or take space on smaller viewports. */
@@ -342,6 +1031,7 @@ body.has-post-lang-banner .modal__scroll {
   background: var(--surface);
   border-radius: var(--radius-card); overflow: hidden;
 }
+.module:first-child { margin-top: var(--page-pad-top); }
 .module__header {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 24px var(--pad-screen) 16px; border-bottom: 1px solid var(--border);
@@ -452,22 +1142,24 @@ body.has-post-lang-banner .modal__scroll {
     overflow: hidden;
     pointer-events: none;
     position: sticky;
-    /* Stick just below chrome + the same gap that separates topbar from module cards. */
-    top: calc(var(--topbar-h) + var(--lang-banner-h) + var(--lesson-panel-gap));
-    /* Viewport − topbar − lang banner − top gap − bottom gap (bottom = top gap). */
+    /* Match left column: first .module uses --page-pad-top under chrome.
+       Top + bottom gaps are equal so the card sits balanced in the view. */
+    top: calc(var(--topbar-h) + var(--lang-banner-h) + var(--page-pad-top));
     height: calc(
       100dvh
       - var(--topbar-h)
       - var(--lang-banner-h)
-      - (2 * var(--lesson-panel-gap))
+      - (2 * var(--page-pad-top))
+      - env(safe-area-inset-bottom, 0px)
     );
     max-height: calc(
       100dvh
       - var(--topbar-h)
       - var(--lang-banner-h)
-      - (2 * var(--lesson-panel-gap))
+      - (2 * var(--page-pad-top))
+      - env(safe-area-inset-bottom, 0px)
     );
-    margin-top: var(--lesson-panel-gap);
+    margin-top: var(--page-pad-top);
     background: var(--surface);
     border-radius: var(--radius-card);
     /* No drop shadow — reserved for true modals (.modal__panel). */
@@ -482,14 +1174,16 @@ body.has-post-lang-banner .modal__scroll {
     content: ''; position: absolute; inset: 0; z-index: 10; pointer-events: none;
     border: 1px solid var(--inner-border); border-radius: inherit;
   }
-  /* Same width as .modal__panel (var --reading-panel-width). At ≥1024 that is 680px. */
+  /* Same width as .modal__panel (var --reading-panel-width). At ≥1024 that is 680px.
+     transform must be `none` when open — any transform (even translateX(0))
+     creates a containing block and kills position:sticky. */
   #view-lessons.is-lesson-open .lesson-panel {
     flex: 0 0 var(--reading-panel-width);
     width: var(--reading-panel-width);
     max-width: var(--reading-panel-width);
     opacity: 1;
     pointer-events: auto;
-    transform: translateX(0);
+    transform: none;
   }
 
   .lesson-panel__close {
@@ -534,15 +1228,26 @@ body.has-post-lang-banner .modal__scroll {
 .modal {
   position: fixed; inset: 0; z-index: 100; padding: 16px;
   display: flex; align-items: center; justify-content: center;
+  overscroll-behavior: none;
 }
-.modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.65); backdrop-filter: blur(2px); }
+.modal__backdrop {
+  position: absolute; inset: 0; background: rgba(0,0,0,0.65); backdrop-filter: blur(2px);
+  animation: modal-backdrop-in 0.2s ease;
+}
 .modal__panel {
   position: relative; width: 100%; max-width: min(95vw, var(--reading-panel-width)); max-height: 90vh;
   background: var(--surface);
   border-radius: var(--radius-card); overflow: hidden; display: flex; flex-direction: column;
   box-shadow: 0 24px 64px rgba(0,0,0,0.5); animation: modal-in 0.2s ease;
+  min-height: 0;
 }
 @keyframes modal-in { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes modal-out { from { transform: scale(1); opacity: 1; } to { transform: scale(0.96); opacity: 0; } }
+@keyframes modal-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modal-backdrop-out { from { opacity: 1; } to { opacity: 0; } }
+/* Closing = reverse of open (panel + backdrop). */
+.modal.is-closing .modal__panel { animation: modal-out 0.18s ease forwards; }
+.modal.is-closing .modal__backdrop { animation: modal-backdrop-out 0.18s ease forwards; }
 .modal__close {
   position: absolute;
   top: max(16px, env(safe-area-inset-top, 0px));
@@ -580,6 +1285,11 @@ body.has-post-lang-banner .modal__scroll {
     from { transform: translateY(12px); opacity: 0; }
     to { transform: translateY(0); opacity: 1; }
   }
+  @keyframes modal-out-full {
+    from { transform: translateY(0); opacity: 1; }
+    to { transform: translateY(12px); opacity: 0; }
+  }
+  .modal.is-closing .modal__panel { animation: modal-out-full 0.2s ease forwards; }
 }
 .modal__action {
   width: 36px; height: 36px; border-radius: var(--radius-pill);
@@ -588,7 +1298,48 @@ body.has-post-lang-banner .modal__scroll {
   transition: background 0.15s;
 }
 .modal__action:hover { background: rgba(0,0,0,0.7); }
-.modal__scroll { overflow-y: auto; flex: 1; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.modal__scroll {
+  overflow-y: auto; flex: 1; min-height: 0;
+  overscroll-behavior: none; -webkit-overflow-scrolling: touch;
+}
+/* Post alt-language offer — floating pill footer.
+   Inset matches close/share chrome: 16px from panel edges (+ safe-area). */
+.modal__lang-footer {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
+  position: relative;
+  z-index: 2;
+  box-sizing: border-box;
+  /* Same edge distance as .modal__close / .modal__actions (16px + safe-area). */
+  margin-left: max(16px, env(safe-area-inset-left, 0px));
+  margin-right: max(16px, env(safe-area-inset-right, 0px));
+  margin-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  margin-top: 0;
+  padding: 8px 10px 8px 16px;
+  min-height: 36px; /* matches floating action button size */
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: center;
+}
+.modal__lang-footer-text { color: #fff; flex: 1 1 auto; min-width: 0; }
+.modal__lang-footer-btn {
+  flex: 0 0 auto;
+  border: none; background: var(--accent); color: #fff; font-family: var(--font);
+  font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: var(--radius-pill); cursor: pointer;
+}
+.modal__lang-footer-close {
+  flex: 0 0 auto;
+  width: 28px; height: 28px; border-radius: var(--radius-pill);
+  border: none; background: transparent; color: rgba(255, 255, 255, 0.7);
+  font-size: 14px; cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.modal__lang-footer-close:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
 /* The close/share/complete buttons float over the cover image. With no cover the body
    is the first child, so it would slide under them — push it clear of button top + size
    (+ notch safe-area on iOS). Applies to cover-less posts too. */
@@ -796,13 +1547,18 @@ body.has-post-lang-banner .modal__scroll {
 
 /* ── Feed layout ────────────────────────────────────────────────────── */
 .feed {
-  max-width: 640px; margin: 0 auto; padding-bottom: var(--pad-screen);
+  max-width: 640px;
+  width: 100%;
+  min-width: 0;
+  margin: 0 auto;
+  padding-bottom: var(--pad-screen);
+  box-sizing: border-box;
   /* max-width animates when a lesson panel opens on desktop (see Estudos block). */
 }
 
 /* ── Price marquee ──────────────────────────────────────────────────── */
 .marquee {
-  margin: var(--space-md) var(--pad-screen) 0;
+  margin: var(--page-pad-top) var(--pad-screen) 0;
   background: var(--surface); border: 1px solid var(--inner-border);
   border-radius: var(--radius-card); padding: 4px 0; overflow: hidden;
   cursor: pointer;
@@ -819,11 +1575,11 @@ body.has-post-lang-banner .modal__scroll {
 @keyframes marquee-scroll { from { transform: translateX(0); } to { transform: translateX(-1170px); } }
 .marquee__item { width: 110px; margin-right: 20px; display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .marquee__icon { width: 24px; height: 24px; border-radius: 12px; object-fit: contain; }
-.marquee__info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.marquee__sym { font-size: 12px; font-weight: 700; line-height: 12px; letter-spacing: 0.3px; }
-.marquee__pricerow { display: flex; gap: 4px; align-items: baseline; }
-.marquee__price { font-size: 10px; line-height: 10px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.marquee__chg { font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.marquee__info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.marquee__sym { font-size: 12px; font-weight: 700; line-height: 10px; letter-spacing: 0.3px; }
+.marquee__pricerow { display: flex; gap: 4px; align-items: baseline; line-height: 9px; }
+.marquee__price { font-size: 10px; line-height: 9px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.marquee__chg { font-size: 10px; line-height: 9px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .up { color: var(--success); }
 .down { color: var(--error); }
 
@@ -834,11 +1590,13 @@ body.has-post-lang-banner .modal__scroll {
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
   padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  overscroll-behavior: none;
 }
 .mm.hidden { display: none; }
 .mm__backdrop {
   position: absolute; inset: 0;
   background: rgba(0,0,0,0.65); backdrop-filter: blur(2px);
+  animation: modal-backdrop-in 0.2s ease;
 }
 .mm__panel {
   position: relative; width: 100%; max-width: 480px; max-height: min(92vh, 720px);
@@ -850,13 +1608,20 @@ body.has-post-lang-banner .modal__scroll {
   /* Chart is edge-to-edge; header/grid pad themselves. */
   padding-top: var(--pad-screen);
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
+  min-height: 0;
 }
 @keyframes mm-in {
   from { transform: scale(0.96) translateY(8px); opacity: 0; }
   to { transform: scale(1) translateY(0); opacity: 1; }
 }
+@keyframes mm-out {
+  from { transform: scale(1) translateY(0); opacity: 1; }
+  to { transform: scale(0.96) translateY(8px); opacity: 0; }
+}
+.mm.is-closing .mm__panel { animation: mm-out 0.18s ease forwards; }
+.mm.is-closing .mm__backdrop { animation: modal-backdrop-out 0.18s ease forwards; }
 @media (max-width: 767px) {
   .mm { padding: 0; align-items: stretch; }
   .mm__panel {
@@ -1147,11 +1912,13 @@ body.has-post-lang-banner .modal__scroll {
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
   padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  overscroll-behavior: none;
 }
 .imodal.hidden { display: none; }
 .imodal__backdrop {
   position: absolute; inset: 0;
   background: rgba(0,0,0,0.65); backdrop-filter: blur(2px);
+  animation: modal-backdrop-in 0.2s ease;
 }
 .imodal__panel {
   position: relative; width: 100%; max-width: 420px; max-height: min(90vh, 640px);
@@ -1160,11 +1927,18 @@ body.has-post-lang-banner .modal__scroll {
   display: flex; flex-direction: column;
   box-shadow: 0 24px 64px rgba(0,0,0,0.5);
   animation: imodal-in 0.2s ease;
+  min-height: 0;
 }
 @keyframes imodal-in {
   from { transform: scale(0.96) translateY(8px); opacity: 0; }
   to { transform: scale(1) translateY(0); opacity: 1; }
 }
+@keyframes imodal-out {
+  from { transform: scale(1) translateY(0); opacity: 1; }
+  to { transform: scale(0.96) translateY(8px); opacity: 0; }
+}
+.imodal.is-closing .imodal__panel { animation: imodal-out 0.18s ease forwards; }
+.imodal.is-closing .imodal__backdrop { animation: modal-backdrop-out 0.18s ease forwards; }
 .imodal__header {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; padding: 16px 16px 12px; flex: 0 0 auto;
@@ -1181,7 +1955,8 @@ body.has-post-lang-banner .modal__scroll {
 }
 .imodal__close:hover { background: color-mix(in srgb, var(--bg-tertiary) 70%, var(--text) 30%); }
 .imodal__scroll {
-  overflow-y: auto; flex: 1; overscroll-behavior: contain;
+  overflow-y: auto; flex: 1; min-height: 0;
+  overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
   padding: 0 16px 20px;
 }
@@ -1248,12 +2023,12 @@ body.has-post-lang-banner .modal__scroll {
   display: flex; gap: 8px; align-items: center;
   /* Only horizontal scroll. Browsers can't pair overflow-x:auto with overflow-y:visible
      (visible computes to auto), so vertical clipping is unavoidable on the scrollport —
-     pad enough for shadow-sm (blur 8) + hover translateY(-1px) to paint inside it. */
+     pad enough for elevated hover shadow (blur 14) + translateY(-2px) to paint inside it. */
   overflow-x: auto;
   overflow-y: visible;
   scrollbar-width: none;
-  padding: 10px 4px;
-  margin: -8px 0; /* cancel the extra pad so wrap spacing stays the same */
+  padding: 12px 4px;
+  margin: -10px 0; /* cancel the extra pad so wrap spacing stays the same */
   scroll-behavior: smooth;
 }
 .tagbar::-webkit-scrollbar { display: none; }
@@ -1286,7 +2061,13 @@ body.has-post-lang-banner .modal__scroll {
   background: var(--surface); color: var(--text-secondary);
   font-family: var(--font); font-size: 14px; font-weight: 500; white-space: nowrap;
   cursor: pointer; box-shadow: var(--shadow-sm);
-  transition: transform 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s, border-color 0.15s, filter 0.15s;
+  /* border stays put — hover only lifts weight/shadow/Y; selected animates bg/color too */
+  transition:
+    transform 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease,
+    font-weight 0.2s ease;
 }
 .tag-pill:active { transform: scale(0.95); }
 .tag-pill.selected { font-weight: 600; box-shadow: none; }
@@ -1310,17 +2091,20 @@ body.has-post-lang-banner .modal__scroll {
   mask: var(--coin) center / contain no-repeat;
 }
 @media (hover: hover) and (pointer: fine) {
-  .tag-pill:not(.selected):hover {
-    background: var(--surface-highlight);
-    color: var(--text);
-    border-color: color-mix(in srgb, var(--text) 18%, transparent);
-    transform: translateY(-1px);
+  /* Hover: weight + shadow + lift only — never touch border/bg/color. */
+  .tag-pill:hover {
+    font-weight: 600;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
   }
   .tag-pill.selected:hover {
-    filter: brightness(1.12);
-    transform: translateY(-1px);
+    /* Keep the coloured fill; just re-add a soft lift shadow over selected. */
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
   }
-  .tag-pill:active { transform: scale(0.95); filter: none; }
+  .tag-pill:active {
+    transform: scale(0.95) translateY(0);
+    box-shadow: var(--shadow-sm);
+  }
 }
 
 /* ── Post card ──────────────────────────────────────────────────────── */
@@ -1455,27 +2239,8 @@ body.has-post-lang-banner .modal__scroll {
   border: 1px solid var(--border); padding: 4px 12px; border-radius: 999px; z-index: 20;
 }
 
-/* ── Menu tool rows (DCA / Position calculators) ─────────────────────── */
-.menu__tools-section { gap: 4px; }
-.menu__tool {
-  display: flex; align-items: center; gap: 10px; width: 100%;
-  border: none; background: none; color: var(--text); text-align: left;
-  padding: 10px 8px; border-radius: 12px; cursor: pointer; font-family: var(--font);
-  transition: background 0.15s;
-}
-.menu__tool:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
-.menu__tool-icon {
-  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 10px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);
-}
-.menu__tool-text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.menu__tool-title { font-size: 14px; font-weight: 600; color: var(--text); line-height: 18px; }
-.menu__tool-sub { font-size: 12px; color: var(--text-tertiary); line-height: 16px; }
-
-/* ── Calculator full-page views (same chrome as Glossary) ─────────────
-   Content width follows .feed (max-width: 640px). Floating chrome uses the
-   same column so back/search never spill past the reading width. */
+/* ── Calculator full-page views (same layout as Glossary) ─────────────
+   Content width follows .feed (max-width: 640px). Nav is sidebar + browser. */
 .calc-page {
   position: relative;
   min-height: calc(100dvh - var(--topbar-h) - var(--lang-banner-h));
@@ -1483,57 +2248,15 @@ body.has-post-lang-banner .modal__scroll {
   flex-direction: column;
   width: 100%;
 }
-/* Shared floating-chrome tokens (back + search must match). */
-.calc-page__header,
-.glossary__header {
-  --float-chrome-bg: color-mix(in srgb, var(--surface) 88%, transparent);
-  --float-chrome-border: var(--inner-border);
-  --float-chrome-fg: var(--text);
-  --float-chrome-muted: var(--text-tertiary);
-}
-.calc-page__header {
-  position: fixed;
-  top: calc(var(--topbar-h) + var(--lang-banner-h) + 12px);
-  left: 50%;
-  transform: translateX(-50%);
-  /* Same column as .feed */
-  width: min(640px, 100%);
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 var(--pad-screen);
-  background: none;
-  pointer-events: none;
-  box-sizing: border-box;
-}
-.calc-page__header > * { pointer-events: auto; }
-.calc-page__back,
-.glossary__back {
-  flex: 0 0 auto;
-  width: 36px; height: 36px; border-radius: var(--radius-pill);
-  border: 1px solid var(--float-chrome-border);
-  background: var(--float-chrome-bg);
-  color: var(--float-chrome-fg);
-  display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer; font-family: var(--font);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: var(--shadow-sm);
-  transition: background 0.15s, filter 0.15s;
-}
-.calc-page__back:hover,
-.glossary__back:hover { filter: brightness(1.06); }
 .calc-page__scroll {
   flex: 1;
   min-width: 0;
-  /* Clear the floating back pill (12 top gap + 36 button + 16 breathing room). */
-  padding: calc(12px + 36px + 16px) var(--pad-screen) max(40px, env(safe-area-inset-bottom, 0px));
+  padding: var(--page-pad-top) var(--pad-screen) max(40px, env(safe-area-inset-bottom, 0px));
 }
 /* Title / subtitle still rendered inside the scroll body by JS */
 .calc__title {
-  font-size: 28px; font-weight: 700; letter-spacing: -0.4px; color: var(--text);
-  margin: 0 0 var(--space-xs);
+  font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: -0.4px; color: var(--text);
+  margin: 0 0 var(--page-title-gap);
 }
 .calc__subtitle {
   font-size: 15px; line-height: 20px; color: var(--text-tertiary);
@@ -1618,10 +2341,25 @@ body.has-post-lang-banner .modal__scroll {
   display: inline-flex; align-items: center;
 }
 
-/* Frequency segmented control (reuses .mm__seg look) */
+/* Frequency segmented control — same 48px height as .calc-field__row / inputs */
 .calc-freq { margin-bottom: var(--space-md); }
-.calc-freq .mm__seg { width: 100%; display: flex; }
-.calc-freq .mm__seg button { flex: 1; }
+.calc-freq .mm__seg {
+  width: 100%;
+  display: flex;
+  align-items: stretch;
+  height: 48px;
+  box-sizing: border-box;
+  padding: 4px;
+}
+.calc-freq .mm__seg button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 12px;
+  font-size: 14px;
+}
 
 /* Coin dropdown trigger */
 .calc-coin-btn {
@@ -1636,19 +2374,37 @@ body.has-post-lang-banner .modal__scroll {
 .calc-coin-btn__sym { flex: 1; font-size: 16px; font-weight: 500; }
 .calc-coin-btn__chev { color: var(--text-tertiary); }
 
-/* Date row */
+/* Date row — month/year (and day) inline selects */
 .calc-date-row {
   display: flex; gap: var(--space-sm); align-items: flex-start;
 }
-.calc-date-btn {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  width: 100%; height: 48px; padding: 0 var(--space-md); border-radius: 12px;
-  border: none; cursor: pointer; font-family: var(--font);
-  background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text);
-  font-size: 15px; font-weight: 500; text-align: left;
+.calc-date-inline {
+  display: flex; gap: 8px; align-items: center; width: 100%;
 }
-.calc-date-btn:hover { background: color-mix(in srgb, var(--text) 9%, transparent); }
-.calc-date-btn__chev { color: var(--text-tertiary); flex: 0 0 auto; }
+.calc-date-select {
+  flex: 1; min-width: 0; height: 48px; border-radius: 12px;
+  border: 1px solid var(--border);
+  background-color: color-mix(in srgb, var(--text) 4%, transparent);
+  color: var(--text); font-family: var(--font); font-size: 15px; font-weight: 500;
+  padding: 0 28px 0 10px; outline: none; cursor: pointer;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-tertiary) 50%),
+    linear-gradient(135deg, var(--text-tertiary) 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) calc(50% - 2px),
+    calc(100% - 11px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.calc-date-select:focus { border-color: var(--accent); }
+.calc-date-select#dca-day { flex: 0.7; }
+.calc-date-select#dca-year { flex: 0.95; }
+@media (max-width: 380px) {
+  .calc-date-row { flex-direction: column; }
+  .calc-date-select#dca-day,
+  .calc-date-select#dca-year { flex: 1; }
+}
 
 /* Result rows */
 .calc-row {
@@ -1694,25 +2450,40 @@ body.has-post-lang-banner .modal__scroll {
 }
 .calc-fee-cfg:hover { color: var(--text); }
 
-/* DCA chart */
+/* DCA chart — stage fills the host so SVG width/height:100% resolve against
+   the fixed 180px box (same idea as .pc__stage / .nb-chart). Without that,
+   height:100% falls through to the viewBox aspect ratio and the SVG can grow
+   taller than the host and paint past the card. */
 .dca-chart {
-  position: relative; width: 100%; height: 180px; user-select: none;
-  touch-action: none;
+  position: relative; width: 100%; height: 180px;
+  overflow: hidden; /* clip strokes/dots at the card edge */
+  user-select: none; touch-action: none;
 }
-.dca-chart svg { display: block; width: 100%; height: 100%; }
+.dca-chart__stage {
+  position: absolute; inset: 0;
+  opacity: 0; transform: translateY(-8px);
+  transition: opacity 0.3s cubic-bezier(0.215, 0.61, 0.355, 1),
+              transform 0.6s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+.dca-chart__stage.is-in { opacity: 1; transform: translateY(0); }
+.dca-chart svg { display: block; width: 100%; height: 100%; overflow: hidden; }
+/* Y labels sit in the right gutter (DCA_PAD.right) — outside the plot area. */
 .dca-chart__y {
-  position: absolute; top: 32px; left: 16px; bottom: 32px;
+  position: absolute; top: 32px; right: 8px; bottom: 32px;
   display: flex; flex-direction: column; justify-content: space-between;
+  align-items: flex-end;
   pointer-events: none; z-index: 1;
+  text-align: right;
 }
 .dca-chart__y span {
   font-size: 10px; font-weight: 500; color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 .dca-chart__legend {
   position: absolute; bottom: 4px; left: 0; right: 0;
   display: flex; justify-content: center; gap: var(--space-md);
-  pointer-events: none;
+  pointer-events: none; z-index: 1;
 }
 .dca-chart__legend-item {
   display: inline-flex; align-items: center; gap: 4px;
@@ -1746,14 +2517,8 @@ body.has-post-lang-banner .modal__scroll {
 .dca-chart__tip-dot { width: 6px; height: 6px; border-radius: 3px; flex: 0 0 auto; }
 .dca-chart__tip-label { color: var(--text-tertiary); }
 .dca-chart__tip-val { font-size: 12px; font-weight: 600; color: var(--text); margin-left: auto; }
-.dca-chart__stage {
-  opacity: 0; transform: translateY(-8px);
-  transition: opacity 0.3s cubic-bezier(0.215, 0.61, 0.355, 1),
-              transform 0.6s cubic-bezier(0.215, 0.61, 0.355, 1);
-}
-.dca-chart__stage.is-in { opacity: 1; transform: translateY(0); }
 
-/* Nested form sheet */
+/* Nested form sheet / popover / modal (calc pickers + fee config) */
 .csheet {
   position: fixed; inset: 0; z-index: 100;
   display: flex; align-items: flex-end; justify-content: center;
@@ -1772,19 +2537,23 @@ body.has-post-lang-banner .modal__scroll {
   border-radius: 20px 20px 0 0;
   display: flex; flex-direction: column;
   transform: translateY(100%);
-  transition: transform 0.28s cubic-bezier(0.215, 0.61, 0.355, 1);
+  transition: transform 0.28s cubic-bezier(0.215, 0.61, 0.355, 1),
+    opacity 0.22s ease;
   padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
   box-shadow: 0 -12px 40px rgba(0,0,0,0.3);
+  opacity: 1;
 }
 .csheet.is-open .csheet__panel { transform: translateY(0); }
 .csheet__handle {
   width: 36px; height: 4px; border-radius: 2px;
   background: color-mix(in srgb, var(--text) 18%, transparent);
   margin: 8px auto 0;
+  flex: 0 0 auto;
 }
 .csheet__header {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; padding: 12px var(--pad-screen) 8px;
+  flex: 0 0 auto;
 }
 .csheet__title {
   margin: 0; font-size: 17px; font-weight: 600; color: var(--text);
@@ -1795,7 +2564,7 @@ body.has-post-lang-banner .modal__scroll {
   display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
 }
 .csheet__body {
-  overflow-y: auto; overscroll-behavior: contain; padding: 8px var(--pad-screen) 16px;
+  overflow-y: auto; overscroll-behavior: none; padding: 8px var(--pad-screen) 16px;
   flex: 1; min-height: 0;
 }
 .csheet__coin {
@@ -1810,91 +2579,115 @@ body.has-post-lang-banner .modal__scroll {
 .csheet__coin-sym { flex: 1; font-size: 15px; font-weight: 500; }
 .csheet__coin-check { color: var(--accent); }
 .csheet__fee-section { margin-bottom: var(--space-lg); }
+.csheet__fee-section:last-of-type { margin-bottom: var(--space-md); }
 .csheet__fee-section .mm__seg { width: 100%; display: flex; }
 .csheet__fee-section .mm__seg button { flex: 1; }
 .csheet__fee-label { font-size: 15px; font-weight: 500; color: var(--text); margin: 0 0 4px; }
 .csheet__fee-cap { font-size: 11px; color: var(--text-tertiary); margin: 0 0 var(--space-sm); line-height: 14px; }
 
-/* Month/year date picker in sheet */
-.csheet-date {
-  display: flex; flex-direction: column; gap: 12px;
+/* Centered modal (fee config) */
+.csheet--modal {
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
 }
-.csheet-date__row {
-  display: flex; gap: 8px; align-items: center;
+.csheet--modal .csheet__backdrop {
+  background: rgba(0,0,0,0.65);
+  backdrop-filter: blur(2px);
 }
-.csheet-date__row select,
-.csheet-date__row input[type="number"] {
-  flex: 1; height: 44px; border-radius: 12px; border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--text) 4%, transparent);
-  color: var(--text); font-family: var(--font); font-size: 15px; font-weight: 500;
-  padding: 0 12px; outline: none;
+.csheet--modal .csheet__panel {
+  width: 100%;
+  max-width: 420px;
+  max-height: min(90vh, 560px);
+  border-radius: var(--radius-card);
+  transform: scale(0.96) translateY(8px);
+  opacity: 0;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+  padding-bottom: 8px;
+  transition: transform 0.2s ease, opacity 0.2s ease;
 }
-.csheet-date__row select:focus,
-.csheet-date__row input:focus { border-color: var(--accent); }
-.csheet-date__confirm {
-  margin-top: 8px; width: 100%; height: 48px; border: none; border-radius: 12px;
-  background: var(--accent); color: #fff; font-family: var(--font);
-  font-size: 16px; font-weight: 600; cursor: pointer;
+.csheet--modal.is-open .csheet__panel {
+  transform: scale(1) translateY(0);
+  opacity: 1;
 }
-.csheet-date__confirm:hover { filter: brightness(1.05); }
-.csheet-date input[type="date"] {
-  width: 100%; height: 44px; border-radius: 12px; border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--text) 4%, transparent);
-  color: var(--text); font-family: var(--font); font-size: 15px; font-weight: 500;
-  padding: 0 12px; outline: none; color-scheme: dark;
-}
-:root[data-theme='light'] .csheet-date input[type="date"] { color-scheme: light; }
+.csheet--modal .csheet__handle { display: none; }
+.csheet--modal .csheet__header { padding: 16px 16px 12px; }
+.csheet--modal .csheet__body { padding: 0 16px 20px; }
 
-/* ── Glossary page (app GlossarySlide) ───────────────────────────────── */
+/* Anchored popover (coin picker on tablet/desktop) */
+.csheet--popover {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+.csheet--popover .csheet__backdrop {
+  background: transparent;
+}
+.csheet--popover.is-open .csheet__backdrop { opacity: 1; }
+.csheet--popover .csheet__panel {
+  /* top/left/width set inline by JS from the trigger rect */
+  width: min(320px, calc(100vw - 24px));
+  max-height: min(60vh, 420px);
+  border-radius: 14px;
+  transform: scale(0.96) translateY(-4px);
+  opacity: 0;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+  padding-bottom: 8px;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+.csheet--popover.is-open .csheet__panel {
+  transform: scale(1) translateY(0);
+  opacity: 1;
+}
+.csheet--popover .csheet__handle { display: none; }
+.csheet--popover .csheet__header {
+  padding: 12px 12px 6px;
+}
+.csheet--popover .csheet__title { font-size: 15px; }
+.csheet--popover .csheet__body {
+  padding: 4px 8px 10px;
+}
+.csheet--popover .csheet__coin {
+  height: 44px;
+  border-radius: 10px;
+}
+
+/* ── Glossary page (app GlossarySlide) ─────────────────────────────────
+   Content width follows .feed (max-width: 640px), same chrome as .calc-page.
+   --glossary-alpha-pad: title stack + search + breathing so the fixed A–Z rail
+   starts under the search bar and mirrors the same inset at the bottom. */
 .glossary {
+  --glossary-search-h: 40px;
+  --glossary-title-lh: 34px;
+  --glossary-alpha-pad: calc(
+    var(--page-pad-top) + var(--glossary-title-lh) + var(--page-title-gap)
+    + var(--glossary-search-h) + 12px
+  );
   position: relative;
   min-height: calc(100dvh - var(--topbar-h) - var(--lang-banner-h));
   display: flex;
   flex-direction: column;
+  width: 100%;
 }
-/* Floating chrome — same column as .feed (640px), same fill as calc back. */
-.glossary__header {
-  position: fixed;
-  top: calc(var(--topbar-h) + var(--lang-banner-h) + 12px);
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(640px, 100%);
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 var(--pad-screen);
-  /* Leave room for the alphabet rail inside the content column. */
-  padding-right: calc(var(--pad-screen) + 36px);
-  background: none;
-  pointer-events: none;
-  box-sizing: border-box;
-}
-.glossary__header > * { pointer-events: auto; }
-/* .glossary__back styles shared with .calc-page__back above */
 .glossary__search {
-  flex: 1; min-width: 0;
   display: flex; align-items: center; gap: 8px;
-  height: 36px; border-radius: var(--radius-pill);
-  /* Same surface as the back button */
-  background: var(--float-chrome-bg);
-  border: 1px solid var(--float-chrome-border);
-  box-shadow: var(--shadow-sm);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  height: var(--glossary-search-h); border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--inner-border);
   padding: 0 12px;
+  margin-top: var(--page-title-gap);
 }
-.glossary__search-icon { flex: 0 0 auto; color: var(--float-chrome-muted); }
+.glossary__search-icon { flex: 0 0 auto; color: var(--text-tertiary); }
 .glossary__search-input {
   flex: 1; min-width: 0;
   border: none; background: transparent; outline: none;
-  font-family: var(--font); font-size: 15px; color: var(--float-chrome-fg);
+  font-family: var(--font); font-size: 15px; color: var(--text);
   padding: 0;
 }
-.glossary__search-input::placeholder { color: var(--float-chrome-muted); }
+.glossary__search-input::placeholder { color: var(--text-tertiary); }
 .glossary__search-input::-webkit-search-cancel-button { display: none; }
 .glossary__search-clear {
-  flex: 0 0 auto; border: none; background: none; color: var(--float-chrome-muted);
+  flex: 0 0 auto; border: none; background: none; color: var(--text-tertiary);
   padding: 0; width: 20px; height: 20px; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
 }
@@ -1904,37 +2697,33 @@ body.has-post-lang-banner .modal__scroll {
   flex: 1;
   display: flex;
   min-height: 0;
+  width: 100%;
 }
 .glossary__scroll {
   flex: 1;
   min-width: 0;
-  /* Clear the floating back + search (12 + 36 + 16). */
-  padding: calc(12px + 36px + 16px) 0 48px;
-  /* Room for the alphabet rail + expanded selection bubble */
-  padding-right: 52px;
+  width: 100%;
+  /* Same horizontal inset as .calc-page__scroll / feed cards */
+  padding: var(--page-pad-top) var(--pad-screen) max(40px, env(safe-area-inset-bottom, 0px));
 }
 .glossary__title-block {
-  padding: 8px var(--pad-screen) 8px;
+  padding: 0 0 8px;
 }
 .glossary__title {
   margin: 0;
-  font-size: 28px; line-height: 34px; font-weight: 700; color: var(--text);
-}
-.glossary__count {
-  margin: 4px 0 0;
-  font-size: 14px; line-height: 18px; color: var(--text-tertiary);
+  font-size: 28px; line-height: var(--glossary-title-lh); font-weight: 700; color: var(--text);
 }
 .glossary__list { padding-bottom: 24px; }
 
 .glossary-section { margin-top: 20px; }
 .glossary-section:first-child { margin-top: 16px; }
 .glossary-section__letter {
-  padding: 0 var(--pad-screen) 8px;
+  padding: 0 0 8px;
   font-size: 17px; line-height: 22px; font-weight: 600; color: var(--text);
 }
 .glossary-section__card {
   position: relative;
-  margin: 0 var(--pad-screen);
+  margin: 0;
   background: var(--surface);
   border-radius: var(--radius-card);
   overflow: hidden;
@@ -1972,24 +2761,26 @@ body.has-post-lang-banner .modal__scroll {
 .glossary-empty svg { opacity: 0.6; }
 .glossary-empty p { margin: 0; font-size: 15px; line-height: 22px; }
 
-/* Alphabet rail — fills remaining viewport height, evenly spaces A–Z#
-   (app AlphabetIndex: base 20px bubble, selected 44px + pop-out). */
+/* Alphabet rail — fixed to the viewport (sticky breaks under overflow-x:hidden
+   ancestors on #app / .app-shell, same reason the desktop sidebar is fixed).
+   Evenly spaces A–Z# (app AlphabetIndex: base 20px bubble, selected 44px + pop-out).
+   Vertical pad matches title+search height so the rail sits under the search by
+   default and balances the same space at the bottom. */
 .glossary__alpha {
-  position: sticky;
-  /* Sit below the floating search chrome so scrubbing stays clear of the pills */
-  top: calc(var(--topbar-h) + var(--lang-banner-h) + 12px + 36px + 12px);
-  align-self: flex-start;
-  height: calc(100dvh - var(--topbar-h) - var(--lang-banner-h) - 12px - 36px - 24px);
-  max-height: calc(100dvh - var(--topbar-h) - var(--lang-banner-h) - 12px - 36px - 24px);
+  position: fixed;
+  top: calc(var(--topbar-h) + var(--lang-banner-h) + var(--glossary-alpha-pad));
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: calc(var(--glossary-alpha-pad) + env(safe-area-inset-bottom, 0px));
+  height: auto;
+  max-height: none;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   align-items: flex-end;
   gap: 0;
-  padding: 2px 4px 2px 0;
+  padding: 2px 0;
   /* Extra left room so the expanded bubble can grow inward without clipping */
   width: 56px;
-  margin-left: -20px;
   overflow: visible;
   user-select: none;
   touch-action: none;
@@ -2074,23 +2865,6 @@ body.has-post-lang-banner .modal__scroll {
   margin-top: -13px;
 }
 
-/* Hover (desktop/trackpad) — soft expand like a light press */
-@media (hover: hover) and (pointer: fine) {
-  .glossary__alpha-btn.is-available:hover:not(.is-pressed) {
-    font-size: 14px;
-  }
-  .glossary__alpha-btn.is-available:hover:not(.is-pressed) .glossary__alpha-char {
-    transform: scale(1.05);
-  }
-  .glossary__alpha-btn.is-available:hover:not(.is-pressed) .glossary__alpha-bubble {
-    opacity: 0.7;
-    width: 30px;
-    height: 30px;
-    margin-right: -15px;
-    margin-top: -15px;
-  }
-}
-
 /* Active press / scrub selection — app selectedContainerSize 44 + pop-out left */
 .glossary__alpha-btn.is-pressed {
   font-size: 20px;
@@ -2118,6 +2892,29 @@ body.has-post-lang-banner .modal__scroll {
   background: color-mix(in srgb, var(--text-tertiary) 32%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-tertiary) 28%, transparent);
 }
+/* Hover = press (bubble grow + pop-out). Fine pointer only — no sticky hover on touch. */
+@media (hover: hover) and (pointer: fine) {
+  .glossary__alpha-btn.is-available:hover {
+    font-size: 20px;
+    opacity: 1;
+    z-index: 2;
+  }
+  .glossary__alpha-btn.is-available:hover .glossary__alpha-char {
+    transform: translateX(-28px) scale(1.15);
+  }
+  .glossary__alpha-btn.is-available:hover .glossary__alpha-bubble {
+    opacity: 1;
+    width: 44px;
+    height: 44px;
+    right: calc(50% + 28px);
+    margin-right: -22px;
+    margin-top: -22px;
+    background: color-mix(in srgb, var(--accent) 32%, transparent);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent),
+      0 4px 14px color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+}
 /* is-active keeps a soft highlight after a jump until scroll-spy updates */
 .glossary__alpha-btn.is-active:not(.is-pressed):not(.is-current) {
   font-size: 12px;
@@ -2130,8 +2927,8 @@ body.has-post-lang-banner .modal__scroll {
   margin-top: -13px;
 }
 
-/* Skeleton */
-.glossary-skel { padding: 0 var(--pad-screen); }
+/* Skeleton (horizontal inset comes from .glossary__scroll) */
+.glossary-skel { padding: 0; }
 .glossary-skel__section { margin-top: 20px; }
 .glossary-skel__letter {
   width: 24px; height: 24px; border-radius: 4px;

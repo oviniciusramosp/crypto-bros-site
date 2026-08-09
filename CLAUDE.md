@@ -31,7 +31,7 @@ Repo é **público** porque o GitHub Pages no plano Free exige repo público —
 
 | Rota                        | O que traz                                          |
 | --------------------------- | --------------------------------------------------- |
-| `GET /web/feed`             | Feed gated por sessão (requer login Google)         |
+| `GET /web/feed`             | Feed gated por sessão (`?lang=` + opcional `?tag=` filtra no Notion) |
 | `GET /web/post`             | Detalhe do post (blocos completos)                  |
 | `GET /web/lessons`          | Estudos: módulos agrupados + progresso do usuário    |
 | `GET /web/lesson`           | Detalhe da aula (blocos completos)                  |

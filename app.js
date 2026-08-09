@@ -115,6 +115,13 @@ function setThemePref(pref) {
   repaintThemedContent();
   repaintOpenCalculators();
 }
+/** Collapsed rail: cycle system → light → dark → system. */
+const THEME_CYCLE = ['system', 'light', 'dark'];
+function cycleThemePref() {
+  const cur = themePref();
+  const i = THEME_CYCLE.indexOf(cur);
+  setThemePref(THEME_CYCLE[(i < 0 ? 0 : i + 1) % THEME_CYCLE.length]);
+}
 if (window.matchMedia) {
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (themePref() !== 'system') return;
@@ -144,9 +151,12 @@ function applyStaticText() {
   $('login-subtitle').textContent = I18N.t('login.subtitle');
   $('login-hint').textContent = I18N.t('login.hint');
   $('g-fake-label').textContent = I18N.t('login.google');
-  $('viewbar-feed').innerHTML = `${FEED_ICON}<span>${escapeHtml(I18N.t('view.feed'))}</span>`;
-  $('viewbar-lessons').innerHTML = `${LESSONS_ICON}<span>${escapeHtml(I18N.t('view.lessons'))}</span>`;
-  $('brand-title').textContent = 'Crypto Bros';
+  const sidebar = $('sidebar');
+  if (sidebar) sidebar.setAttribute('aria-label', I18N.t('sidebar.nav'));
+  applySidebarLabels();
+  updateSidebarChromeAria();
+  const fab = $('sidebar-fab');
+  if (fab) fab.setAttribute('aria-label', I18N.t('sidebar.expand'));
   const tagPrev = $('tagbar-prev');
   const tagNext = $('tagbar-next');
   if (tagPrev) tagPrev.setAttribute('aria-label', I18N.t('filters.prev'));
@@ -154,6 +164,119 @@ function applyStaticText() {
   document.querySelectorAll('#login-lang button').forEach((b) =>
     b.classList.toggle('active', b.dataset.lang === I18N.lang));
   renderMenuState();
+}
+
+/** Fill sidebar nav labels + Ionicons (and cryptobros Feed glyph). */
+function applySidebarLabels() {
+  const items = [
+    { id: 'sidebar-feed', label: I18N.t('view.feed'), iconHtml: FEED_ICON },
+    { id: 'sidebar-lessons', label: I18N.t('view.lessons'), iconHtml: LESSONS_ICON },
+    { id: 'sidebar-glossary', label: I18N.t('menu.glossary.title'), iconHtml: GLOSSARY_ICON },
+    { id: 'sidebar-dca', label: I18N.t('menu.dca.title'), iconHtml: DCA_ICON },
+    { id: 'sidebar-pos', label: I18N.t('menu.pos.title'), iconHtml: POS_ICON },
+  ];
+  for (const item of items) {
+    const btn = $(item.id);
+    if (!btn) continue;
+    const icon = btn.querySelector('.sidebar__icon');
+    const label = btn.querySelector('.sidebar__label');
+    if (item.iconHtml && icon) icon.innerHTML = item.iconHtml;
+    if (label) label.textContent = item.label;
+    btn.dataset.label = item.label;
+    btn.setAttribute('aria-label', item.label);
+  }
+}
+
+const SIDEBAR_COLLAPSED_KEY = 'cb-sidebar-collapsed';
+const SIDEBAR_MQ = '(min-width: 1024px)';
+
+function isDesktopSidebar() {
+  try { return window.matchMedia(SIDEBAR_MQ).matches; } catch (e) { return false; }
+}
+
+function isSidebarCollapsed() {
+  return document.getElementById('app')?.classList.contains('is-sidebar-collapsed');
+}
+
+function isSidebarOpen() {
+  return document.getElementById('app')?.classList.contains('is-sidebar-open');
+}
+
+function updateSidebarChromeAria() {
+  const toggle = $('sidebar-toggle');
+  const menuBtn = $('sidebar-fab');
+  const backdrop = $('sidebar-backdrop');
+  if (isDesktopSidebar()) {
+    const collapsed = isSidebarCollapsed();
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      toggle.setAttribute('aria-label', I18N.t(collapsed ? 'sidebar.expand' : 'sidebar.collapse'));
+    }
+    if (menuBtn) menuBtn.setAttribute('aria-expanded', 'false');
+    if (backdrop) backdrop.hidden = true;
+  } else {
+    const open = isSidebarOpen();
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.setAttribute('aria-label', I18N.t(open ? 'sidebar.collapse' : 'sidebar.expand'));
+    }
+    if (menuBtn) {
+      menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      menuBtn.setAttribute('aria-label', I18N.t(open ? 'sidebar.collapse' : 'sidebar.expand'));
+    }
+    if (backdrop) backdrop.hidden = !open;
+  }
+}
+
+/**
+ * Desktop collapse/expand: only the rail width animates.
+ * Labels stay in the DOM and clip via overflow as the row width follows the rail.
+ * Icons stay left-aligned; gap == padding-left so text never needs a separate hide phase.
+ */
+function setSidebarCollapsed(collapsed) {
+  const app = $('app');
+  if (!app) return;
+  app.classList.toggle('is-sidebar-collapsed', !!collapsed);
+  app.classList.remove('is-sidebar-rail'); // legacy
+  app.classList.remove('is-sidebar-labels-hidden'); // legacy two-phase
+  try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch (e) {}
+  updateSidebarChromeAria();
+  if (typeof syncLessonPanelChrome === 'function') syncLessonPanelChrome();
+}
+
+/** Phone/tablet overlay drawer open/close. */
+function setSidebarOpen(open) {
+  const app = $('app');
+  if (!app) return;
+  app.classList.toggle('is-sidebar-open', !!open);
+  document.body.style.overflow = open && !isDesktopSidebar() ? 'hidden' : '';
+  updateSidebarChromeAria();
+}
+
+function closeSidebarDrawer() {
+  closeUserPopover();
+  if (!isDesktopSidebar() && isSidebarOpen()) setSidebarOpen(false);
+}
+
+function initSidebar() {
+  let collapsed = false;
+  try { collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'; } catch (e) {}
+  if (isDesktopSidebar()) {
+    const app = $('app');
+    if (app) {
+      app.classList.toggle('is-sidebar-collapsed', !!collapsed);
+      app.classList.remove('is-sidebar-rail');
+      app.classList.remove('is-sidebar-labels-hidden');
+    }
+  } else {
+    setSidebarOpen(false);
+  }
+  updateSidebarChromeAria();
+}
+
+function syncNavActive(view) {
+  document.querySelectorAll('#sidebar-nav .sidebar__item').forEach((b) =>
+    b.classList.toggle('active', b.dataset.view === view));
 }
 function onLangChange(lang) {
   if (lang === I18N.lang) return;
@@ -193,7 +316,13 @@ function onLangChange(lang) {
   if (currentView === 'dca') loadDcaPage();
   else if (currentView === 'pos') loadPosPage();
 
-  if (isPreview()) { renderTags(); renderFeed(); return; }
+  // Language picks a different Notion row set — drop the active filter so we do not
+  // re-query a PT tag name against EN posts (or vice-versa). Rebuild pills so the
+  // "all" label + tagLabel() translations refresh (applyFeedData skips rebuild when
+  // the tag name set is unchanged).
+  selectedTag = 'all';
+  if (feedTags.length) renderTags();
+  if (isPreview()) { renderFeed(); return; }
   if (currentView === 'lessons') loadLessons();
   else if (currentView === 'glossary') loadGlossaryPage();
   else if (currentView === 'dca' || currentView === 'pos') { /* already reloaded above */ }
@@ -206,24 +335,28 @@ const LANG_BANNER_KEY = 'cb-lang-banner-dismissed';
 // Session-scoped: dismissing a post-language offer shouldn't silence future shared links.
 const POST_LANG_BANNER_KEY = 'cb-post-lang-banner-dismissed';
 
-// Which offer the shared #lang-banner is currently showing (site-wide vs post alt).
+// Site-wide locale banner (#lang-banner) is separate from the post alt-language
+// footer (#post-lang-banner), which lives inside the post modal panel.
 let langBannerMode = null; // 'site' | 'post' | null
 
+function hidePostLangBanner() {
+  const el = $('post-lang-banner');
+  if (el) el.classList.add('hidden');
+  if (langBannerMode === 'post') langBannerMode = null;
+}
+
 function hideLangBanner() {
+  // Site-wide top banner only. Post offer has its own hide path.
+  hidePostLangBanner();
   langBannerMode = null;
   const el = $('lang-banner');
-  el.classList.add('hidden');
-  el.classList.remove('lang-banner--over-modal');
-  document.body.classList.remove('has-post-lang-banner');
-  document.documentElement.style.removeProperty('--post-lang-banner-h');
+  if (el) el.classList.add('hidden');
   syncLessonPanelChrome();
 }
 function showLangBanner(lang) {
+  hidePostLangBanner();
   langBannerMode = 'site';
   const el = $('lang-banner');
-  el.classList.remove('lang-banner--over-modal'); // site offer sits in normal page flow
-  document.body.classList.remove('has-post-lang-banner');
-  document.documentElement.style.removeProperty('--post-lang-banner-h');
   $('lang-banner-text').textContent = I18N.tIn(lang, 'langBanner.text');
   const btn = $('lang-banner-switch');
   btn.textContent = I18N.tIn(lang, 'langBanner.switch');
@@ -232,30 +365,26 @@ function showLangBanner(lang) {
   syncLessonPanelChrome();
 }
 
-/** Measure the bottom post-lang bar so modal scroll padding matches its height. */
-function syncPostLangBannerHeight() {
-  const el = $('lang-banner');
-  if (!el || langBannerMode !== 'post' || el.classList.contains('hidden')) return;
-  const h = Math.ceil(el.getBoundingClientRect().height);
-  document.documentElement.style.setProperty('--post-lang-banner-h', `${h}px`);
-}
-
 /**
  * Measure sticky chrome so the desktop lesson panel fills the remaining viewport:
- *   height = 100dvh − topbar − langBanner − 2×gap
- * where gap is the topbar→cards distance (--lesson-panel-gap, same as module margin-top).
- * The post-language banner floats over the modal and must NOT shrink the panel.
+ *   height = 100dvh − topbar − langBanner − 2×page-pad-top
+ * (same top inset as the first module card on the left column).
+ * Post-language footer is inside the modal — never part of page chrome.
  */
 function syncLessonPanelChrome() {
   const root = document.documentElement;
-  const topbar = document.querySelector('.topbar');
   const banner = $('lang-banner');
-  const topbarH = topbar ? topbar.getBoundingClientRect().height : 0;
+  const mobileTop = $('mobile-topbar');
+  // Desktop: no mobile topbar (sidebar chrome). Phone/tablet: measure sticky bar.
+  let topbarH = 0;
+  if (mobileTop && !isDesktopSidebar()) {
+    const cs = getComputedStyle(mobileTop);
+    if (cs.display !== 'none') topbarH = mobileTop.getBoundingClientRect().height;
+  }
   const bannerVisible =
     banner &&
     !banner.classList.contains('hidden') &&
-    !banner.classList.contains('lang-banner--over-modal') &&
-    langBannerMode !== 'post';
+    langBannerMode === 'site';
   const bannerH = bannerVisible ? banner.getBoundingClientRect().height : 0;
   root.style.setProperty('--topbar-h', `${Math.round(topbarH)}px`);
   root.style.setProperty('--lang-banner-h', `${Math.round(bannerH)}px`);
@@ -290,8 +419,10 @@ function browserPrefersPortuguese() {
  * When a PT-BR post is opened in a non-Portuguese browser (and a published EN
  * counterpart exists via Notion "Tradução"), offer to open the English version.
  * Inverse: EN post + Portuguese browser → offer PT.
+ * Renders as a fixed footer inside the post modal (same chrome as close/share).
  */
 function maybeSuggestPostLanguage(post) {
+  hidePostLangBanner();
   if (!post || !post.altId) return;
   try { if (sessionStorage.getItem(POST_LANG_BANNER_KEY)) return; } catch (e) {}
 
@@ -302,22 +433,14 @@ function maybeSuggestPostLanguage(post) {
   else if (lang === 'EN' && wantsPt) offerLang = 'pt';
   if (!offerLang) return;
 
-  // Prefer the post-specific offer over the generic site-language banner.
-  // Dock to the BOTTOM of the viewport (not the top) so it never covers the topbar
-  // or the modal close/share buttons.
   langBannerMode = 'post';
-  const el = $('lang-banner');
-  el.classList.add('lang-banner--over-modal');
-  document.body.classList.add('has-post-lang-banner');
-  $('lang-banner-text').textContent = I18N.tIn(offerLang, 'postLangBanner.text');
-  const btn = $('lang-banner-switch');
+  const el = $('post-lang-banner');
+  if (!el) return;
+  $('post-lang-banner-text').textContent = I18N.tIn(offerLang, 'postLangBanner.text');
+  const btn = $('post-lang-banner-switch');
   btn.textContent = I18N.tIn(offerLang, 'postLangBanner.switch');
   btn.onclick = () => switchToAltPost(post.altId, offerLang);
   el.classList.remove('hidden');
-  // Bottom bar must not shrink the lesson panel chrome metrics.
-  syncLessonPanelChrome();
-  // Measure after paint so wrapped text / safe-area padding are included.
-  requestAnimationFrame(syncPostLangBannerHeight);
 }
 
 /** Switch UI language + open the translated post (used by the post-language banner). */
@@ -386,7 +509,7 @@ function signOut() {
   localStorage.removeItem(EMAIL_KEY);
   // Keep DEV_SECRET_KEY so the next reload on localhost can re-bootstrap without re-pasting.
   if (marqueeTimer) clearInterval(marqueeTimer);
-  $('user-menu').classList.add('hidden');
+  closeSidebarDrawer();
   closeIndicatorModal();
   closeMarketModal();
   showLogin();
@@ -516,52 +639,124 @@ async function loadFavoriteCoins() {
   }
 }
 
-// ── Popover menu ──────────────────────────────────────────────────────
+// ── User popover + theme icons ────────────────────────────────────────
+/** Theme icons: outline idle → solid when selected (CSS .active). Paths from ionicons@7.4.0. */
+function themeIconPair(outline, solid, extraClass) {
+  return (
+    `<svg class="theme-ico${extraClass ? ` ${extraClass}` : ''}" viewBox="0 0 512 512" aria-hidden="true">` +
+    `<g class="theme-ico__outline">${outline}</g>` +
+    `<g class="theme-ico__solid">${solid}</g>` +
+    `</svg>`
+  );
+}
+// System: invert-mode on phone/tablet, laptop on desktop (CSS swaps .theme-ico__bp-*).
+const THEME_ICON_SYSTEM =
+  `<svg class="theme-ico theme-ico--system" viewBox="0 0 512 512" aria-hidden="true">` +
+  // Mobile/tablet — invert-mode-outline / invert-mode
+  `<g class="theme-ico__bp-mobile">` +
+  `<g class="theme-ico__outline" fill="none" stroke="currentColor" stroke-width="32" stroke-miterlimit="10">` +
+  `<circle cx="256" cy="256" r="208"/>` +
+  `<path fill="currentColor" stroke="none" d="M256 176v160a80 80 0 010-160zM256 48v128a80 80 0 010 160v128c114.88 0 208-93.12 208-208S370.88 48 256 48z"/>` +
+  `</g>` +
+  `<g class="theme-ico__solid" fill="none" stroke="currentColor" stroke-width="32" stroke-miterlimit="10">` +
+  `<circle cx="256" cy="256" r="208"/>` +
+  `<path fill="currentColor" stroke="none" d="M256 176v160a80 80 0 000-160zM256 48v128a80 80 0 000 160v128c-114.88 0-208-93.12-208-208S141.12 48 256 48z"/>` +
+  `</g>` +
+  `</g>` +
+  // Desktop — laptop-outline / laptop
+  `<g class="theme-ico__bp-desktop">` +
+  `<g class="theme-ico__outline" fill="none" stroke="currentColor" stroke-width="32" stroke-linejoin="round">` +
+  `<rect x="48" y="96" width="416" height="304" rx="32.14" ry="32.14"/>` +
+  `<path stroke-linecap="round" stroke-miterlimit="10" d="M16 416h480"/>` +
+  `</g>` +
+  `<g class="theme-ico__solid" fill="currentColor" stroke="none">` +
+  `<path d="M496 400h-28.34A47.92 47.92 0 00480 367.86V128.14A48.2 48.2 0 00431.86 80H80.14A48.2 48.2 0 0032 128.14v239.72A47.92 47.92 0 0044.34 400H16a16 16 0 000 32h480a16 16 0 000-32z"/>` +
+  `</g>` +
+  `</g>` +
+  `</svg>`;
 const THEME_ICONS = {
-  system: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/></svg>',
-  light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
-  dark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>',
+  system: THEME_ICON_SYSTEM,
+  light: themeIconPair(
+    // sunny-outline style (compact on 512 grid)
+    `<g fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round">` +
+    `<circle cx="256" cy="256" r="80"/>` +
+    `<path d="M256 48v48M256 416v48M48 256h48M416 256h48M108 108l34 34M370 370l34 34M108 404l34-34M370 142l34-34"/>` +
+    `</g>`,
+    `<g fill="currentColor">` +
+    `<circle cx="256" cy="256" r="96"/>` +
+    `</g>` +
+    `<g fill="none" stroke="currentColor" stroke-width="40" stroke-linecap="round">` +
+    `<path d="M256 32v56M256 424v56M32 256h56M424 256h56M99 99l40 40M373 373l40 40M99 413l40-40M373 139l40-40"/>` +
+    `</g>`
+  ),
+  dark: themeIconPair(
+    `<path fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" d="M160 136c0-30.62 4.51-61.61 16-88C99.57 81.27 48 159.32 48 248c0 119.29 96.71 216 216 216 88.68 0 166.73-51.57 200-128-26.39 11.49-57.38 16-88 16-119.29 0-216-96.71-216-216z"/>`,
+    `<path fill="currentColor" d="M152.62 126.77c0-33 4.85-66.35 17.23-94.77C87.54 67.83 32 151.89 32 247.38 32 375.85 136.15 480 264.62 480c95.49 0 179.55-55.54 215.38-137.85-28.42 12.38-61.8 17.23-94.77 17.23-133.87 0-242.61-108.74-242.61-242.61z"/>`
+  ),
 };
-function menuOpen() { return !$('user-menu').classList.contains('hidden'); }
-function openMenu() {
-  $('user-menu').classList.remove('hidden');
-  $('user-btn').setAttribute('aria-expanded', 'true');
+
+function userPopoverOpen() {
+  const pop = $('user-popover');
+  return !!(pop && !pop.classList.contains('hidden'));
 }
-function closeMenu() {
-  $('user-menu').classList.add('hidden');
-  $('user-btn').setAttribute('aria-expanded', 'false');
+function openUserPopover() {
+  const pop = $('user-popover');
+  const trigger = $('user-menu-trigger');
+  if (!pop || !trigger) return;
+  pop.classList.remove('hidden');
+  trigger.setAttribute('aria-expanded', 'true');
 }
-function toggleMenu() {
-  menuOpen() ? closeMenu() : openMenu();
+function closeUserPopover() {
+  const pop = $('user-popover');
+  const trigger = $('user-menu-trigger');
+  if (!pop || !trigger) return;
+  pop.classList.add('hidden');
+  trigger.setAttribute('aria-expanded', 'false');
 }
+function toggleUserPopover() {
+  userPopoverOpen() ? closeUserPopover() : openUserPopover();
+}
+
 function renderMenuState() {
   document.querySelectorAll('#menu-lang button').forEach((b) =>
     b.classList.toggle('active', b.dataset.lang === I18N.lang));
   const pref = themePref();
   document.querySelectorAll('#menu-theme button').forEach((b) =>
     b.classList.toggle('active', b.dataset.themePref === pref));
-  $('menu-lang-label').textContent = I18N.t('menu.language');
-  $('menu-theme-label').textContent = I18N.t('menu.appearance');
-  $('menu-coins-label').textContent = I18N.t('menu.favoriteCoins');
-  const toolsLabel = $('menu-tools-label');
-  if (toolsLabel) toolsLabel.textContent = I18N.t('menu.tools');
-  const gTitle = $('menu-glossary-title');
-  const gSub = $('menu-glossary-sub');
-  if (gTitle) gTitle.textContent = I18N.t('menu.glossary.title');
-  if (gSub) gSub.textContent = I18N.t('menu.glossary.sub');
-  const dcaTitle = $('menu-dca-title');
-  const dcaSub = $('menu-dca-sub');
-  const posTitle = $('menu-pos-title');
-  const posSub = $('menu-pos-sub');
-  if (dcaTitle) dcaTitle.textContent = I18N.t('menu.dca.title');
-  if (dcaSub) dcaSub.textContent = I18N.t('menu.dca.sub');
-  if (posTitle) posTitle.textContent = I18N.t('menu.pos.title');
-  if (posSub) posSub.textContent = I18N.t('menu.pos.sub');
+  const langLabel = $('menu-lang-label');
+  if (langLabel) langLabel.textContent = I18N.t('menu.language');
+  const coinsLabel = $('menu-coins-label');
+  if (coinsLabel) coinsLabel.textContent = I18N.t('menu.favoriteCoins');
+  const themeGroup = $('menu-theme');
+  if (themeGroup) themeGroup.setAttribute('aria-label', I18N.t('menu.appearance'));
   const tp = (k) => document.querySelector(`#menu-theme [data-theme-pref="${k}"]`);
-  tp('system').innerHTML = THEME_ICONS.system + `<span>${I18N.t('appearance.system')}</span>`;
-  tp('light').innerHTML = THEME_ICONS.light + `<span>${I18N.t('appearance.light')}</span>`;
-  tp('dark').innerHTML = THEME_ICONS.dark + `<span>${I18N.t('appearance.dark')}</span>`;
-  $('menu-logout').textContent = I18N.t('menu.logout');
+  const labels = {
+    system: I18N.t('appearance.system'),
+    light: I18N.t('appearance.light'),
+    dark: I18N.t('appearance.dark'),
+  };
+  for (const key of Object.keys(labels)) {
+    const btn = tp(key);
+    if (!btn) continue;
+    btn.innerHTML = THEME_ICONS[key];
+    btn.setAttribute('aria-label', labels[key]);
+    btn.setAttribute('title', labels[key]);
+  }
+  // Collapsed cycle button: solid icon + fixed “change theme” tooltip.
+  const cycle = $('menu-theme-cycle');
+  if (cycle) {
+    const key = THEME_CYCLE.includes(pref) ? pref : 'system';
+    cycle.innerHTML = THEME_ICONS[key];
+    const changeTheme = I18N.t('menu.changeTheme');
+    cycle.dataset.label = changeTheme;
+    cycle.setAttribute('aria-label', changeTheme);
+  }
+  const logout = $('menu-logout');
+  const logoutLabel = $('menu-logout-label');
+  if (logout) logout.setAttribute('aria-label', I18N.t('menu.logout'));
+  if (logoutLabel) logoutLabel.textContent = I18N.t('menu.logout');
+  const notifLabel = $('menu-notif-label');
+  if (notifLabel) notifLabel.textContent = I18N.t('menu.notifications');
   updateNotifButton();
   // Keep open calculator copy in sync with language.
   if (typeof isCalcOpen === 'function') {
@@ -574,15 +769,14 @@ function renderMenuState() {
 function showLogin() {
   $('app').classList.add('hidden');
   $('login').classList.remove('hidden');
+  setSidebarOpen(false);
+  document.body.style.overflow = '';
   applyStaticText();
   initGoogle();
 }
 function showApp() {
   $('login').classList.add('hidden');
   $('app').classList.remove('hidden');
-  // Fill the avatar slot only — the button also holds the hamburger caret, so do NOT
-  // replace all its children.
-  $('user-btn-avatar').replaceChildren(userAvatarNode());
   renderMenuUser();
   applyStaticText();
   startMarquee();
@@ -599,7 +793,6 @@ function showApp() {
   syncFromUrl(); // restores ?view= / ?post= / ?lesson= on load and after login
   maybeShowIosBanner();
   updateNotifButton();
-  // Topbar is in the DOM now — lock panel metrics to real chrome heights.
   syncLessonPanelChrome();
 }
 
@@ -744,8 +937,12 @@ function formatTooltipDate(ts) {
   // UTC date to avoid timezone shift (CoinGecko timestamps are UTC midnight)
   const utc = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
   const locale = I18N.lang === 'en' ? 'en-US' : 'pt-BR';
-  const formatted = utc.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
-  return formatted.replace(/\b[a-zà-ú]/gi, (c) => c.toUpperCase());
+  // Build day-first without locale "de" articles (pt-BR would yield "18 de dez. de 2025").
+  // Result: "18 Dez. 2025" / "18 Dec 2025" — mirrors app chartUtils formatTooltipDate.
+  let month = utc.toLocaleDateString(locale, { month: 'short' }).replace(/\.$/, '').trim();
+  month = month.charAt(0).toUpperCase() + month.slice(1);
+  if (I18N.lang !== 'en') month += '.';
+  return `${utc.getDate()} ${month} ${utc.getFullYear()}`;
 }
 function coinAccent(id) {
   return COIN_COLORS[id] || '#F15B24'; // theme accent (BTC)
@@ -1419,21 +1616,20 @@ function openMarketModal() {
   renderMarketModalHeader();
   renderMarketModalPeriods();
   renderMarketModalGrid();
-  $('market-modal').classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
+  openOverlay($('market-modal'));
   try { $('market-modal-close').focus({ preventScroll: true }); } catch (e) {}
 
   loadMarketChart(false);
 }
 
 function closeMarketModal() {
-  if ($('market-modal').classList.contains('hidden')) return;
-  $('market-modal').classList.add('hidden');
-  mmState.scrub = null;
-  if (typeof mmState.zoomRaf === 'function') mmState.zoomRaf();
-  if ($('modal').classList.contains('hidden') && $('indicator-modal').classList.contains('hidden')) {
-    document.body.style.overflow = '';
-  }
+  const root = $('market-modal');
+  if (root.classList.contains('hidden') || root.classList.contains('is-closing')) return;
+  animateOverlayClose(root, '.mm__panel', () => {
+    mmState.scrub = null;
+    if (typeof mmState.zoomRaf === 'function') mmState.zoomRaf();
+    unlockBodyScrollIfIdle();
+  });
 }
 
 function selectMarketCoin(coinId) {
@@ -2000,17 +2196,17 @@ function renderIndicatorModalContent() {
 
 function openIndicatorModal() {
   renderIndicatorModalContent();
-  $('indicator-modal').classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
+  openOverlay($('indicator-modal'));
   // Focus close for a11y; Escape handled globally below.
   try { $('indicator-modal-close').focus({ preventScroll: true }); } catch (e) {}
 }
 
 function closeIndicatorModal() {
-  if ($('indicator-modal').classList.contains('hidden')) return;
-  $('indicator-modal').classList.add('hidden');
-  // Don't unlock body scroll if the post/lesson modal is still open.
-  if ($('modal').classList.contains('hidden')) document.body.style.overflow = '';
+  const root = $('indicator-modal');
+  if (root.classList.contains('hidden') || root.classList.contains('is-closing')) return;
+  animateOverlayClose(root, '.imodal__panel', () => {
+    unlockBodyScrollIfIdle();
+  });
 }
 
 // ── Notion colors ─────────────────────────────────────────────────────
@@ -2108,17 +2304,31 @@ const TAG_LABELS = {
   'NFT': { pt: 'NFT', en: 'NFT' },
 };
 function tagLabel(name) { const m = TAG_LABELS[name]; return m ? m[I18N.lang] || m.pt : name; }
-// Tab icons, mirroring the app's tab bar.
-//
-// Feed uses the app's OWN icon font (cryptobros-icons.ttf, copied into assets/fonts) —
-// the CSS swaps btc-lg-outline → btc-lg on the selected tab, exactly like the app. Not a
-// lookalike SVG: the same glyphs.
+// Sidebar nav icons.
+// Idle = solid light-gray; selected = solid orange (CSS .sidebar__item.active color).
+// Feed: app icon font (cryptobros-icons.ttf) — always filled glyph.
+// Glossário: Flowbite Icons `book` (same as app MaisScreen SectionItem flowbiteIcon="book").
+// Rest: Ionicons solid (ionicons@7.4.0, viewBox 512).
 const FEED_ICON = '<i class="cbi cbi--btc" aria-hidden="true"></i>';
-// Estudos: Ionicons `book-outline`, and `book` (filled) when selected — the app's pair.
 const LESSONS_ICON =
   '<svg class="ion ion--book" viewBox="0 0 512 512" aria-hidden="true">' +
-  '<path class="ion__outline" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" d="M256 160c16-63.16 76.43-95.41 208-96a15.94 15.94 0 0 1 16 16v288a16 16 0 0 1-16 16c-128 0-177.45 25.81-208 64-30.37-38-80-64-208-64-9.88 0-16-8.05-16-17.93V80a15.94 15.94 0 0 1 16-16c131.57.59 192 32.84 208 96zM256 160v288"/>' +
-  '<path class="ion__solid" fill="currentColor" d="M202.24 74C166.11 56.75 115.61 48.3 48 48a31.36 31.36 0 0 0-17.92 5.33A32 32 0 0 0 16 79.9V366c0 19.34 13.76 33.93 32 33.93 71.07 0 142.36 6.64 185.06 47a4.11 4.11 0 0 0 6.94-3V106.82a15.89 15.89 0 0 0-5.46-12A143 143 0 0 0 202.24 74zM481.92 53.3A31.33 31.33 0 0 0 464 48c-67.61.3-118.11 8.71-154.24 26a143.31 143.31 0 0 0-32.31 20.78 15.93 15.93 0 0 0-5.45 12v337.13a3.93 3.93 0 0 0 6.68 2.81c25.67-25.5 70.4-46.81 185.36-46.81a32 32 0 0 0 32-32v-288a32 32 0 0 0-14.12-26.61z"/>' +
+  '<path fill="currentColor" d="M202.24 74C166.11 56.75 115.61 48.3 48 48a31.36 31.36 0 0 0-17.92 5.33A32 32 0 0 0 16 79.9V366c0 19.34 13.76 33.93 32 33.93 71.07 0 142.36 6.64 185.06 47a4.11 4.11 0 0 0 6.94-3V106.82a15.89 15.89 0 0 0-5.46-12A143 143 0 0 0 202.24 74zM481.92 53.3A31.33 31.33 0 0 0 464 48c-67.61.3-118.11 8.71-154.24 26a143.31 143.31 0 0 0-32.31 20.78 15.93 15.93 0 0 0-5.45 12v337.13a3.93 3.93 0 0 0 6.68 2.81c25.67-25.5 70.4-46.81 185.36-46.81a32 32 0 0 0 32-32v-288a32 32 0 0 0-14.12-26.61z"/>' +
+  '</svg>';
+// Flowbite Icons MIT — path from app src/components/ui/FlowbiteIcon.tsx (`book`).
+const GLOSSARY_ICON =
+  '<svg class="fb fb--book" viewBox="0 0 24 24" aria-hidden="true">' +
+  '<path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M6 2a2 2 0 0 0-2 2v15a3 3 0 0 0 3 3h12a1 1 0 1 0 0-2h-2v-2h2a1 1 0 0 0 1-1V4a2 2 0 0 0-2-2h-8v16h5v2H7a1 1 0 1 1 0-2h1V2H6Z"/>' +
+  '</svg>';
+// Ionicons trending-up (outline path — Ionicons has no separate solid for this glyph).
+const DCA_ICON =
+  '<svg class="ion ion--trending" viewBox="0 0 512 512" aria-hidden="true">' +
+  '<path fill="none" stroke="currentColor" stroke-width="40" stroke-linecap="round" stroke-linejoin="round" d="M352 144h112v112"/>' +
+  '<path fill="none" stroke="currentColor" stroke-width="40" stroke-linecap="round" stroke-linejoin="round" d="M48 368l121.37-121.37a32 32 0 0145.26 0l50.74 50.74a32 32 0 0045.26 0L448 160"/>' +
+  '</svg>';
+// Ionicons calculator (solid).
+const POS_ICON =
+  '<svg class="ion ion--calculator" viewBox="0 0 512 512" aria-hidden="true">' +
+  '<path fill="currentColor" d="M416 80a48.05 48.05 0 00-48-48H144a48.05 48.05 0 00-48 48v352a48.05 48.05 0 0048 48h224a48.05 48.05 0 0048-48zM168 432a24 24 0 1124-24 24 24 0 01-24 24zm0-80a24 24 0 1124-24 24 24 0 01-24 24zm0-80a24 24 0 1124-24 24 24 0 01-24 24zm88 160a24 24 0 1124-24 24 24 0 01-24 24zm0-80a24 24 0 1124-24 24 24 0 01-24 24zm0-80a24 24 0 1124-24 24 24 0 01-24 24zm112 136a24 24 0 01-48 0v-80a24 24 0 0148 0zm-24-136a24 24 0 1124-24 24 24 0 01-24 24zm19.31-100.69A16 16 0 01352 176H160a16 16 0 01-16-16V96a16 16 0 0116-16h192a16 16 0 0116 16v64a16 16 0 01-4.69 11.31z"/>' +
   '</svg>';
 
 // ── Ticker SVGs (assets/tickers/{SYM}.svg) ────────────────────────────
@@ -2356,7 +2566,6 @@ function renderTags() {
   const bar = $('tagbar');
   if (!bar) return;
   ensureTagbarNav();
-  const dark = isDark();
   // Tags hidden from the filter bar (still valid on posts, just not offered as filters)
   const HIDDEN_TAGS = ['Adoção', 'Regulação'];
   const pills = [{ name: 'all', label: I18N.t('filters.all'), color: 'default' }]
@@ -2368,22 +2577,39 @@ function renderTags() {
     const btn = el('button', 'tag-pill');
     btn.type = 'button';
     btn.setAttribute('role', 'tab');
-    btn.setAttribute('aria-selected', selectedTag === p.name ? 'true' : 'false');
-    const hex = pillHex(p.color);
+    btn.dataset.tag = p.name;
+    btn.dataset.color = p.color;
     // Glyph icons always use the category colour; tickers keep brand colours.
-    btn.innerHTML = `${tagIconHtml(p.name, hex)}<span>${escapeHtml(p.label)}</span>`;
-    if (selectedTag === p.name) {
-      btn.classList.add('selected');
-      // Matches the app's NOTION_SELECTED_COLORS exactly: rgba(hex, .15) on light,
-      // rgba(hex, .3) on dark — once the hex itself is the theme's.
-      btn.style.background = rgba(hex, dark ? 0.3 : 0.15);
-      btn.style.color = hex;
-    }
-    btn.addEventListener('click', () => { selectedTag = p.name; renderTags(); renderFeed(); });
+    btn.innerHTML = `${tagIconHtml(p.name, pillHex(p.color))}<span>${escapeHtml(p.label)}</span>`;
+    btn.addEventListener('click', () => selectTag(p.name));
     bar.appendChild(btn);
   });
+  // Apply selection styles after mount so a later syncTagPills() can animate in place.
+  syncTagPills();
   // After layout so scrollWidth is correct (fonts/icons may still settle — rAF covers it).
   requestAnimationFrame(syncTagbarEdges);
+}
+
+/** Toggle selected styles on existing pills — keeps DOM so CSS transitions can run. */
+function syncTagPills() {
+  const bar = $('tagbar');
+  if (!bar) return;
+  const dark = isDark();
+  bar.querySelectorAll('.tag-pill').forEach((btn) => {
+    const name = btn.dataset.tag;
+    const selected = name === selectedTag;
+    btn.classList.toggle('selected', selected);
+    btn.setAttribute('aria-selected', selected ? 'true' : 'false');
+    if (selected) {
+      const hex = pillHex(btn.dataset.color || 'default');
+      // Matches the app's NOTION_SELECTED_COLORS: rgba(hex, .15) light / .3 dark.
+      btn.style.background = rgba(hex, dark ? 0.3 : 0.15);
+      btn.style.color = hex;
+    } else {
+      btn.style.background = '';
+      btn.style.color = '';
+    }
+  });
 }
 
 // ── Glossary matcher (port of app src/utils/glossaryMatcher.ts) ───────
@@ -3220,8 +3446,29 @@ function renderCard(post) {
 }
 
 // ── Feed + history ────────────────────────────────────────────────────
+/** Switch filter pill. Live traffic re-queries the Worker with `?tag=` so results
+ * span the full published history; preview keeps a local filter over mock posts.
+ * Clicking the already-selected tag (except "all") clears the filter. */
+function selectTag(name) {
+  if (selectedTag === name) {
+    if (name === 'all') return;
+    name = 'all'; // toggle off
+  }
+  selectedTag = name;
+  historyPage = 0;
+  // In-place style update so hover → selected (and back) can CSS-transition.
+  syncTagPills();
+  if (isPreview()) {
+    renderFeed();
+    return;
+  }
+  loadFeed();
+}
+
 function renderFeed() {
   const list = $('feed-list');
+  // Server-scoped responses already match selectedTag. Client filter remains for
+  // preview mocks (and as a safety net if a stale unscoped payload is rendered).
   const posts = selectedTag === 'all'
     ? feedPosts
     : feedPosts.filter((p) => (p.tags || []).some((t) => t.name === selectedTag));
@@ -3239,8 +3486,14 @@ function renderFeed() {
 }
 function renderHistory() {
   const sec = $('history');
-  // History is the "older posts" list; hidden while a tag filter is active (full cards only).
-  if (selectedTag !== 'all' || !feedHistory.length) { sec.classList.add('hidden'); sec.replaceChildren(); return; }
+  // History rows are metadata-only (no tags). After a server-side tag query the list
+  // is already scoped, so show it. Preview filters client-side only → hide history
+  // while a tag is active (mock history has no tags to match against).
+  if (!feedHistory.length || (selectedTag !== 'all' && isPreview())) {
+    sec.classList.add('hidden');
+    sec.replaceChildren();
+    return;
+  }
   sec.classList.remove('hidden');
   const totalPages = Math.ceil(feedHistory.length / HISTORY_PAGE_SIZE);
   if (historyPage >= totalPages) historyPage = totalPages - 1;
@@ -3304,55 +3557,174 @@ function skeletons(n) {
   }
   return frag;
 }
-function applyFeedData(data) {
+function sameTagList(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every((t, i) => t.name === b[i].name && t.color === b[i].color);
+}
+
+function applyFeedData(data, opts) {
   feedPosts = data.posts || [];
   feedHistory = data.history || [];
-  feedTags = data.tags || [];
-  selectedTag = 'all';
+  // Tag options come from the DB schema (not the filtered result set) — always refresh
+  // when present so the pill bar stays complete even on a scoped query.
+  const tagsChanged = !!(data.tags && !sameTagList(feedTags, data.tags));
+  if (data.tags) feedTags = data.tags;
+  // Preserve the tag that produced this payload (defaults to "all" on first paint).
+  selectedTag = (opts && opts.tag) || 'all';
   historyPage = 0;
-  renderTags();
+  // Rebuild only when the option set changes (or first paint). Rebuilding on every
+  // filtered fetch would tear down the DOM mid hover→selected CSS transition.
+  const bar = $('tagbar');
+  if (tagsChanged || !bar || !bar.children.length) renderTags();
+  else syncTagPills();
   renderFeed();
 }
+
+function feedCacheKey(tag) {
+  const t = tag && tag !== 'all' ? tag : 'all';
+  return t === 'all' ? `cb-feed-${I18N.notionLang}` : `cb-feed-${I18N.notionLang}-tag:${t}`;
+}
+
+// Bumps on every loadFeed call so a slow response for tag A cannot overwrite tag B.
+let feedLoadSeq = 0;
+
 // Stale-while-revalidate: render the cached feed instantly, then refresh from the network.
+// When selectedTag !== 'all', the Worker scopes the Notion query via ?tag=.
 async function loadFeed() {
-  const cacheKey = `cb-feed-${I18N.notionLang}`;
+  const requestedTag = selectedTag || 'all';
+  const seq = ++feedLoadSeq;
+  const cacheKey = feedCacheKey(requestedTag);
   let showedCache = false;
   try {
     const cached = sessionStorage.getItem(cacheKey);
-    if (cached) { applyFeedData(JSON.parse(cached)); showedCache = true; }
+    if (cached) { applyFeedData(JSON.parse(cached), { tag: requestedTag }); showedCache = true; }
   } catch (e) {}
   if (!showedCache) { $('feed-list').replaceChildren(skeletons(3)); $('history').classList.add('hidden'); }
 
+  const tagParam = requestedTag !== 'all' ? `&tag=${encodeURIComponent(requestedTag)}` : '';
   let res;
   try {
-    res = await authFetch(`/web/feed?lang=${I18N.notionLang}`);
+    res = await authFetch(`/web/feed?lang=${I18N.notionLang}${tagParam}`);
   } catch (e) {
+    if (seq !== feedLoadSeq) return;
     if (!showedCache) $('feed-list').replaceChildren(stateNode(I18N.t('offline.message'), null, loadFeed));
     return;
   }
+  if (seq !== feedLoadSeq) return;
   if (!res) return; // session expired — authFetch already sent us to the login screen
   if (!res.ok) {
     if (!showedCache) $('feed-list').replaceChildren(stateNode(I18N.t('error.title'), I18N.t('error.message'), loadFeed));
     return;
   }
   const data = await res.json();
+  if (seq !== feedLoadSeq) return;
   try { sessionStorage.setItem(cacheKey, JSON.stringify(data)); } catch (e) {}
-  applyFeedData(data);
+  applyFeedData(data, { tag: requestedTag });
 }
 
 // ── Post detail modal ─────────────────────────────────────────────────
 let currentPostId = null;
-function openModal() { $('modal').classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
-function closeModal(fromPop) {
-  $('modal').classList.add('hidden');
+
+/** True while any full-screen overlay (post/market/indicator/lightbox) is visible. */
+function anyOverlayOpen() {
+  return ['modal', 'market-modal', 'indicator-modal', 'lightbox'].some((id) => {
+    const el = $(id);
+    return el && !el.classList.contains('hidden');
+  });
+}
+function lockBodyScroll() {
+  document.body.style.overflow = 'hidden';
+  document.body.classList.add('modal-open');
+}
+function unlockBodyScrollIfIdle() {
+  if (anyOverlayOpen()) return;
   document.body.style.overflow = '';
+  document.body.classList.remove('modal-open');
+}
+
+/** Cancel a pending animated close (timer + animationend) without hiding. */
+function cancelOverlayClose(root) {
+  if (!root) return;
+  if (root._closeTimer) { clearTimeout(root._closeTimer); root._closeTimer = null; }
+  if (root._closeOnEnd && root._closePanel) {
+    root._closePanel.removeEventListener('animationend', root._closeOnEnd);
+  }
+  root._closeOnEnd = null;
+  root._closePanel = null;
+  root._closeDone = null;
+  root.classList.remove('is-closing');
+}
+
+/**
+ * Play the CSS close animation (reverse of open), then hide. Re-open cancels
+ * an in-flight close via cancelOverlayClose().
+ */
+function animateOverlayClose(root, panelSelector, onDone) {
+  if (!root || root.classList.contains('hidden')) {
+    if (onDone) onDone();
+    return;
+  }
+  if (root.classList.contains('is-closing')) return;
+  cancelOverlayClose(root);
+  root.classList.add('is-closing');
+  let finished = false;
+  const panel = panelSelector ? root.querySelector(panelSelector) : null;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    if (root._closeTimer) { clearTimeout(root._closeTimer); root._closeTimer = null; }
+    if (root._closeOnEnd && root._closePanel) {
+      root._closePanel.removeEventListener('animationend', root._closeOnEnd);
+    }
+    root._closeOnEnd = null;
+    root._closePanel = null;
+    // Hide first, then drop is-closing — avoids a one-frame flash of the enter state.
+    root.classList.add('hidden');
+    root.classList.remove('is-closing');
+    if (onDone) onDone();
+  };
+  const onEnd = (e) => {
+    // Only the panel's own animation — ignore bubbled ends from children.
+    if (e.target !== panel) return;
+    finish();
+  };
+  root._closePanel = panel;
+  root._closeOnEnd = onEnd;
+  if (panel) panel.addEventListener('animationend', onEnd);
+  // Fallback if animationend never fires (reduced-motion / display quirks).
+  root._closeTimer = setTimeout(finish, 260);
+}
+
+/** Cancel an in-flight close and show the overlay (restarts enter animation). */
+function openOverlay(root) {
+  if (!root) return;
+  const wasClosing = root.classList.contains('is-closing');
+  cancelOverlayClose(root);
+  root.classList.remove('hidden');
+  // Interrupted mid-close: force enter keyframes to re-run from the start.
+  if (wasClosing) {
+    root.querySelectorAll('[class*="__panel"], [class*="__backdrop"]').forEach((node) => {
+      node.style.animation = 'none';
+      // Force reflow so clearing the style restarts the stylesheet animation.
+      void node.offsetWidth;
+      node.style.animation = '';
+    });
+  }
+  lockBodyScroll();
+}
+
+function openModal() {
+  openOverlay($('modal'));
+}
+function finishCloseModal(fromPop) {
   currentPostId = null;
   currentLessonId = null;
   $('modal-complete').classList.add('hidden');
   closeLessonPanel();
   markActiveLesson(null);
   // Only dismiss the post-language offer — leave a site-locale banner alone.
-  if (langBannerMode === 'post') hideLangBanner();
+  hidePostLangBanner();
+  unlockBodyScrollIfIdle();
   if (fromPop) return;
   const params = new URLSearchParams(location.search);
   if (!params.has('post') && !params.has('lesson')) return;
@@ -3360,15 +3732,25 @@ function closeModal(fromPop) {
   // must land on Estudos, not on the Feed.
   history.pushState({ view: currentView }, '', viewUrl(currentView));
 }
+function closeModal(fromPop) {
+  const m = $('modal');
+  // Desktop lesson panel path never opens #modal — still clean state + history.
+  if (m.classList.contains('hidden')) {
+    finishCloseModal(fromPop);
+    return;
+  }
+  if (m.classList.contains('is-closing')) return;
+  animateOverlayClose(m, '.modal__panel', () => finishCloseModal(fromPop));
+}
 function openLightbox(src) {
   $('lightbox-img').src = src;
   $('lightbox').classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
+  lockBodyScroll();
 }
 function closeLightbox() {
   $('lightbox').classList.add('hidden');
   $('lightbox-img').removeAttribute('src');
-  if ($('modal').classList.contains('hidden')) document.body.style.overflow = '';
+  unlockBodyScrollIfIdle();
 }
 function toast(msg) {
   const t = el('div', 'toast', msg);
@@ -3725,10 +4107,12 @@ function renderLessonModal(lesson) {
  */
 function presentLessonSurface() {
   if (prefersLessonSplit()) {
-    // Leaving the modal path (e.g. resize up from tablet).
-    if (!$('modal').classList.contains('hidden') && !currentPostId) {
-      $('modal').classList.add('hidden');
-      document.body.style.overflow = '';
+    // Leaving the modal path (e.g. resize up from tablet) — no close animation.
+    const m = $('modal');
+    if (!m.classList.contains('hidden') && !currentPostId) {
+      cancelOverlayClose(m);
+      m.classList.add('hidden');
+      unlockBodyScrollIfIdle();
     }
     $('modal-complete').classList.add('hidden');
     openLessonPanel();
@@ -3819,7 +4203,6 @@ async function toggleLessonComplete() {
 }
 
 // ── View switching (Feed | Estudos | Glossário | DCA | Pos) ───────────
-const TOOL_VIEWS = new Set(['glossary', 'dca', 'pos']);
 const ALL_VIEWS = ['feed', 'lessons', 'glossary', 'dca', 'pos'];
 const VIEW_FADE_MS = 160;
 /** View currently painted (may lag `currentView` mid-transition). */
@@ -3914,9 +4297,8 @@ function setView(view, fromPop) {
 
   currentView = view;
 
-  // Tool pages are not topbar segments — clear active when on them.
-  document.querySelectorAll('#viewbar button').forEach((b) =>
-    b.classList.toggle('active', !TOOL_VIEWS.has(view) && b.dataset.view === view));
+  syncNavActive(view);
+  closeSidebarDrawer(); // phone/tablet: close overlay after a nav choice
   if (!fromPop) history.pushState({ view }, '', viewUrl(view));
   if (view === 'lessons' && !lessonModules.length) loadLessons();
   if (view === 'glossary') loadGlossaryPage();
@@ -3929,16 +4311,18 @@ function setView(view, fromPop) {
     hideGlossaryTooltip();
   }
   if (leavingDca || leavingPos) closeCalcSheet();
-  // Leaving Estudos via the viewbar must tear down any open lesson (panel or
+  // Leaving Estudos via the sidebar must tear down any open lesson (panel or
   // modal). URL is already view-only above; skip another history push.
   if (leavingLessons && (currentLessonId || $('view-lessons').classList.contains('is-lesson-open'))) {
     currentLessonId = null;
     closeLessonPanel();
     markActiveLesson(null);
     if (!$('modal').classList.contains('hidden') && !currentPostId) {
-      $('modal').classList.add('hidden');
-      document.body.style.overflow = '';
+      const m = $('modal');
+      cancelOverlayClose(m);
+      m.classList.add('hidden');
       $('modal-complete').classList.add('hidden');
+      unlockBodyScrollIfIdle();
     }
   }
 
@@ -4030,9 +4414,14 @@ function glossarySkeletonHtml() {
   return html + '</div>';
 }
 
+function glossarySearchPlaceholder(totalCount) {
+  const n = typeof totalCount === 'number' ? totalCount : 0;
+  const key = n === 1 ? 'glossary.searchPlaceholderOne' : 'glossary.searchPlaceholder';
+  return I18N.t(key, { count: n });
+}
+
 function renderGlossaryPage() {
   const list = $('glossary-list');
-  const countEl = $('glossary-count');
   const titleEl = $('glossary-title');
   const search = $('glossary-search');
   const clearBtn = $('glossary-search-clear');
@@ -4040,25 +4429,18 @@ function renderGlossaryPage() {
   if (!list) return;
 
   if (titleEl) titleEl.textContent = I18N.t('glossary.title');
+  const termTotal = glossaryTerms.length;
   if (search) {
-    search.placeholder = I18N.t('glossary.searchPlaceholder');
-    search.setAttribute('aria-label', I18N.t('glossary.searchPlaceholder'));
+    const ph = glossarySearchPlaceholder(termTotal);
+    search.placeholder = ph;
+    search.setAttribute('aria-label', ph);
   }
-  const back = $('glossary-back');
-  if (back) back.setAttribute('aria-label', I18N.t('glossary.back'));
 
   const q = glossarySearchQuery;
   if (clearBtn) clearBtn.classList.toggle('hidden', !q);
 
   const filtered = filterGlossaryTerms(glossaryTerms, q);
   const groups = groupTermsByLetter(filtered);
-  const total = filtered.length;
-
-  if (countEl) {
-    countEl.textContent = total === 1
-      ? I18N.t('glossary.termCount', { count: total })
-      : I18N.t('glossary.termCountPlural', { count: total });
-  }
 
   if (!glossaryTerms.length && glossaryLoadedLang !== I18N.notionLang) {
     list.innerHTML = glossarySkeletonHtml();
@@ -4132,18 +4514,19 @@ function renderGlossaryStatic() {
   const titleEl = $('glossary-title');
   if (titleEl) titleEl.textContent = I18N.t('glossary.title');
   const search = $('glossary-search');
-  if (search) search.placeholder = I18N.t('glossary.searchPlaceholder');
-  const back = $('glossary-back');
-  if (back) back.setAttribute('aria-label', I18N.t('glossary.back'));
+  if (search) {
+    const ph = glossarySearchPlaceholder(glossaryTerms.length);
+    search.placeholder = ph;
+    search.setAttribute('aria-label', ph);
+  }
 }
 
-/** Offset from top of viewport to the first readable line under floating chrome. */
+/** Offset from top of viewport for alphabet jump targets. */
 function glossaryScrollOffset() {
   const topbarH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topbar-h')) || 0;
   const bannerH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--lang-banner-h')) || 0;
-  // Floating header: 12 gap + 36 pill + 12 breathing room (matches CSS padding-top).
-  const floatingChrome = 12 + 36 + 12;
-  return topbarH + bannerH + floatingChrome;
+  // Small breathing room under the fixed chrome (sidebar/banner).
+  return topbarH + bannerH + 12;
 }
 
 function scrollToGlossaryLetter(letter, opts) {
@@ -4250,8 +4633,8 @@ function handleGlossaryAlphaScrub(clientY, isStart) {
   // Animate every letter (available or not), scroll only when available — app parity
   if (available && letter !== glossaryAlphaLastLetter) {
     glossaryAlphaLastLetter = letter;
-    // Instant while dragging so the list tracks the finger; smooth only on first tap
-    scrollToGlossaryLetter(letter, { instant: !isStart || glossaryAlphaScrubbing });
+    // Smooth on first press; instant while dragging so the list tracks the finger
+    scrollToGlossaryLetter(letter, { instant: !isStart });
   }
 }
 
@@ -4353,26 +4736,48 @@ function urlB64ToUint8(base64) {
   const raw = atob(b64);
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
-const BELL_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
-async function updateNotifButton() {
-  const btn = $('menu-notif');
-  if (!btn) return;
-  if (!pushSupported()) { btn.classList.add('hidden'); return; }
-  btn.classList.remove('hidden');
-  if (Notification.permission === 'denied') {
-    btn.innerHTML = BELL_ICON + `<span>${I18N.t('notif.blocked')}</span>`; btn.disabled = true; btn.classList.remove('on'); return;
-  }
-  btn.disabled = false;
-  let subscribed = false;
+async function getPushSubscription() {
   try {
     const reg = await navigator.serviceWorker.getRegistration();
-    if (reg) subscribed = !!(await reg.pushManager.getSubscription());
-  } catch (e) {}
-  btn.innerHTML = BELL_ICON + `<span>${I18N.t(subscribed ? 'notif.enabled' : 'notif.enable')}</span>`;
-  btn.classList.toggle('on', subscribed);
+    if (!reg) return null;
+    return await reg.pushManager.getSubscription();
+  } catch (e) {
+    return null;
+  }
+}
+async function updateNotifButton() {
+  const sw = $('menu-notif');
+  const row = $('menu-notif-row');
+  const label = $('menu-notif-label');
+  if (!sw || !row) return;
+  if (!pushSupported()) {
+    row.classList.add('hidden');
+    return;
+  }
+  row.classList.remove('hidden');
+
+  if (Notification.permission === 'denied') {
+    const text = I18N.t('notif.blocked');
+    if (label) label.textContent = text;
+    sw.setAttribute('aria-checked', 'false');
+    row.disabled = true;
+    row.setAttribute('aria-label', text);
+    return;
+  }
+
+  row.disabled = false;
+  const sub = await getPushSubscription();
+  const on = !!sub;
+  const text = I18N.t(on ? 'notif.enabled' : 'notif.enable');
+  if (label) label.textContent = I18N.t('menu.notifications');
+  sw.setAttribute('aria-checked', on ? 'true' : 'false');
+  row.setAttribute('aria-label', text);
+  row.setAttribute('aria-pressed', on ? 'true' : 'false');
 }
 async function enableNotifications() {
-  if (!pushSupported() || $('menu-notif').disabled) return;
+  if (!pushSupported()) return;
+  const row = $('menu-notif-row');
+  if (row && row.disabled) return;
   try {
     const reg = await navigator.serviceWorker.register('/sw.js');
     await navigator.serviceWorker.ready;
@@ -4391,6 +4796,31 @@ async function enableNotifications() {
   } catch (e) { /* permission denied / unsupported */ }
   updateNotifButton();
 }
+async function disableNotifications() {
+  if (!pushSupported()) return;
+  try {
+    const sub = await getPushSubscription();
+    if (sub) {
+      try {
+        await fetch(`${CONFIG.workerBase}/web/push/unsubscribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getSession()}` },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        });
+      } catch (e) { /* best-effort */ }
+      await sub.unsubscribe();
+    }
+  } catch (e) { /* ignore */ }
+  updateNotifButton();
+}
+async function onNotifSwitchClick() {
+  const sw = $('menu-notif');
+  const row = $('menu-notif-row');
+  if (!sw || (row && row.disabled)) return;
+  const on = sw.getAttribute('aria-checked') === 'true';
+  if (on) await disableNotifications();
+  else await enableNotifications();
+}
 
 // ── Calculators (app DCASimulatorSlide + PositionCalculatorSlide) ─────
 // Fields, formulas, bundled chart source, and DCA chart colors/entrance
@@ -4407,7 +4837,8 @@ const DEFAULT_TAKER_FEE = 0.00055; // Bybit VIP 0
 const DEFAULT_MAKER_FEE = 0.0002;
 const RESULT_CARD_STAGGER = 120;
 const DCA_CHART_H = 180;
-const DCA_PAD = { top: 32, right: 16, bottom: 32, left: 16 };
+// Right pad leaves a gutter for Y-axis labels so lines never cover them.
+const DCA_PAD = { top: 32, right: 48, bottom: 32, left: 12 };
 const POST_DCA_OPACITY = 0.35;
 const DCA_DRAW_MS = 800;
 const DCA_AVG_DRAW_MS = 1000;
@@ -4429,6 +4860,8 @@ const dcaState = {
   chartGeom: null,
   scrub: null,
   cancelDraw: null,
+  chartRo: null, // ResizeObserver on #dca-chart-host
+  lastPaintW: 0,
 };
 
 const posState = {
@@ -4500,7 +4933,7 @@ function formatCalcMoney(n, decimals = 2) {
 
 /**
  * DCA calculation — verbatim port of calculateDCA in DCASimulatorSlide.tsx.
- * Data source: bundled daily only (app getBundledChart), not live layers.
+ * Series comes from loadDcaChartData (bundle + /chart-delta + CoinGecko gap-fill).
  */
 function calculateDCA(dailyData, amount, frequency, startDate, years) {
   if (!dailyData.length || amount <= 0 || years <= 0) return null;
@@ -4605,12 +5038,100 @@ function calculatePosition(wallet, lossPercent, stopDist, lev, openFeeRate, clos
   return { positionValue, cost, maxLoss, stopLoss, openFee, closeFee, totalFees };
 }
 
-// ── Nested form sheet ────────────────────────────────────────────────
-function openCalcSheet({ title, html, onMount }) {
+// ── Nested form sheet / popover / modal ──────────────────────────────
+// presentation:
+//   'sheet'   — bottom sheet (phone default)
+//   'popover' — anchored floating panel (tablet/desktop pickers)
+//   'modal'   — centered dialog (fee config)
+//   'auto'    — popover ≥768px, sheet below
+
+function isCalcWideLayout() {
+  return window.matchMedia('(min-width: 768px)').matches;
+}
+
+function clearCalcSheetPanelPosition(panel) {
+  if (!panel) return;
+  panel.style.top = '';
+  panel.style.left = '';
+  panel.style.right = '';
+  panel.style.bottom = '';
+  panel.style.width = '';
+  panel.style.maxHeight = '';
+  panel.style.position = '';
+}
+
+function positionCalcPopover(panel, anchor) {
+  if (!panel || !anchor) return;
+  const gap = 8;
+  const margin = 12;
+  const rect = anchor.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const panelW = Math.min(320, vw - margin * 2);
+  const maxH = Math.min(420, vh - margin * 2);
+
+  // Measure preferred height (content may be long — cap with maxH)
+  panel.style.position = 'fixed';
+  panel.style.width = `${panelW}px`;
+  panel.style.maxHeight = `${maxH}px`;
+  panel.style.visibility = 'hidden';
+  panel.style.left = '0';
+  panel.style.top = '0';
+  const measuredH = Math.min(panel.scrollHeight || maxH, maxH);
+
+  let left = rect.left;
+  if (left + panelW > vw - margin) left = vw - margin - panelW;
+  if (left < margin) left = margin;
+
+  // Prefer below the trigger; flip above if not enough room
+  let top = rect.bottom + gap;
+  if (top + measuredH > vh - margin && rect.top - gap - measuredH >= margin) {
+    top = rect.top - gap - measuredH;
+  } else if (top + measuredH > vh - margin) {
+    top = Math.max(margin, vh - margin - measuredH);
+  }
+
+  panel.style.left = `${Math.round(left)}px`;
+  panel.style.top = `${Math.round(top)}px`;
+  panel.style.visibility = '';
+}
+
+let calcSheetRepositionHandler = null;
+
+function openCalcSheet({ title, html, onMount, presentation = 'sheet', anchor = null }) {
   const root = $('calc-sheet');
+  const panel = root.querySelector('.csheet__panel');
+  let mode = presentation;
+  if (mode === 'auto') mode = isCalcWideLayout() ? 'popover' : 'sheet';
+  if (mode === 'popover' && !anchor) mode = isCalcWideLayout() ? 'modal' : 'sheet';
+
+  root.classList.remove('csheet--sheet', 'csheet--popover', 'csheet--modal');
+  root.classList.add(`csheet--${mode}`);
+  root.dataset.presentation = mode;
+  clearCalcSheetPanelPosition(panel);
+
   $('calc-sheet-title').textContent = title;
   $('calc-sheet-body').innerHTML = html;
   root.classList.remove('hidden');
+
+  if (mode === 'popover' && anchor) {
+    positionCalcPopover(panel, anchor);
+    if (calcSheetRepositionHandler) {
+      window.removeEventListener('resize', calcSheetRepositionHandler);
+      window.removeEventListener('scroll', calcSheetRepositionHandler, true);
+    }
+    calcSheetRepositionHandler = () => {
+      if (root.classList.contains('hidden') || root.dataset.presentation !== 'popover') return;
+      if (!document.body.contains(anchor)) {
+        closeCalcSheet();
+        return;
+      }
+      positionCalcPopover(panel, anchor);
+    };
+    window.addEventListener('resize', calcSheetRepositionHandler);
+    window.addEventListener('scroll', calcSheetRepositionHandler, true);
+  }
+
   requestAnimationFrame(() => {
     requestAnimationFrame(() => root.classList.add('is-open'));
   });
@@ -4619,17 +5140,24 @@ function openCalcSheet({ title, html, onMount }) {
 
 function closeCalcSheet() {
   const root = $('calc-sheet');
-  if (root.classList.contains('hidden')) return;
+  if (!root || root.classList.contains('hidden')) return;
   root.classList.remove('is-open');
+  if (calcSheetRepositionHandler) {
+    window.removeEventListener('resize', calcSheetRepositionHandler);
+    window.removeEventListener('scroll', calcSheetRepositionHandler, true);
+    calcSheetRepositionHandler = null;
+  }
   setTimeout(() => {
     if (!root.classList.contains('is-open')) {
       root.classList.add('hidden');
+      root.classList.remove('csheet--sheet', 'csheet--popover', 'csheet--modal');
+      clearCalcSheetPanelPosition(root.querySelector('.csheet__panel'));
       $('calc-sheet-body').innerHTML = '';
     }
   }, 280);
 }
 
-function openCoinPicker(selectedId, onSelect) {
+function openCoinPicker(selectedId, onSelect, anchor) {
   const html = CALC_COINS.map((c) => {
     const sel = c.id === selectedId ? ' is-selected' : '';
     const check = c.id === selectedId
@@ -4642,6 +5170,8 @@ function openCoinPicker(selectedId, onSelect) {
   openCalcSheet({
     title: I18N.t('dca.picker.selectCrypto'),
     html,
+    presentation: 'auto',
+    anchor: anchor || null,
     onMount: (body) => {
       body.querySelectorAll('[data-coin]').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -4653,60 +5183,75 @@ function openCoinPicker(selectedId, onSelect) {
   });
 }
 
-function openDatePicker({ date, minDate, maxDate, monthYearOnly, onConfirm }) {
+/** Inline month/year (and day when not monthly) for the DCA start date. */
+function dcaStartDateControlsHtml() {
   const months = I18N.lang === 'en' ? MONTH_NAMES_EN : MONTH_NAMES_PT;
+  const date = dcaState.startDate || defaultDcaStartDate();
+  const first = dcaState.chartData[0] ? new Date(dcaState.chartData[0].t) : null;
+  const maxDate = new Date();
   const y = date.getFullYear();
   const m = date.getMonth();
   const d = date.getDate();
-  const minY = minDate ? minDate.getFullYear() : y - 20;
-  const maxY = maxDate ? maxDate.getFullYear() : y;
-  let years = '';
+  const minY = first ? first.getFullYear() : y - 20;
+  const maxY = maxDate.getFullYear();
+  const monthYearOnly = dcaState.frequency === 'monthly';
+
+  let yearOpts = '';
   for (let i = maxY; i >= minY; i--) {
-    years += `<option value="${i}"${i === y ? ' selected' : ''}>${i}</option>`;
+    yearOpts += `<option value="${i}"${i === y ? ' selected' : ''}>${i}</option>`;
   }
   let monthOpts = '';
   for (let i = 0; i < 12; i++) {
     monthOpts += `<option value="${i}"${i === m ? ' selected' : ''}>${months[i]}</option>`;
   }
-  const title = monthYearOnly ? I18N.t('dca.picker.selectMonth') : I18N.t('dca.picker.selectDate');
-  const dayPart = monthYearOnly ? '' :
-    `<div class="csheet-date__row">` +
-      `<input type="number" id="csheet-day" min="1" max="31" value="${d}" aria-label="Day"/>` +
-    `</div>`;
-  const html =
-    `<div class="csheet-date">` +
-      `<div class="csheet-date__row">` +
-        `<select id="csheet-month" aria-label="Month">${monthOpts}</select>` +
-        `<select id="csheet-year" aria-label="Year">${years}</select>` +
-      `</div>${dayPart}` +
-      `<button type="button" class="csheet-date__confirm" id="csheet-date-ok">${escapeHtml(I18N.t('dca.picker.confirm'))}</button>` +
-    `</div>`;
-  openCalcSheet({
-    title,
-    html,
-    onMount: (body) => {
-      body.querySelector('#csheet-date-ok').addEventListener('click', () => {
-        const month = parseInt(body.querySelector('#csheet-month').value, 10);
-        const year = parseInt(body.querySelector('#csheet-year').value, 10);
-        let day = 1;
-        if (!monthYearOnly) {
-          const dayEl = body.querySelector('#csheet-day');
-          day = dayEl ? parseInt(dayEl.value, 10) || 1 : 1;
-        }
-        const lastDay = new Date(year, month + 1, 0).getDate();
-        day = Math.min(Math.max(1, day), lastDay);
-        const next = new Date(year, month, day);
-        if (minDate && next < minDate) {
-          onConfirm(new Date(minDate));
-        } else if (maxDate && next > maxDate) {
-          onConfirm(new Date(maxDate));
-        } else {
-          onConfirm(next);
-        }
-        closeCalcSheet();
-      });
-    },
-  });
+
+  let dayOpts = '';
+  if (!monthYearOnly) {
+    const lastDay = new Date(y, m + 1, 0).getDate();
+    for (let i = 1; i <= lastDay; i++) {
+      dayOpts += `<option value="${i}"${i === d ? ' selected' : ''}>${i}</option>`;
+    }
+  }
+
+  // PT: day/month/year · EN: month/day/year · monthly: month/year
+  const monthSel = `<select id="dca-month" class="calc-date-select" aria-label="Month">${monthOpts}</select>`;
+  const yearSel = `<select id="dca-year" class="calc-date-select" aria-label="Year">${yearOpts}</select>`;
+  const daySel = monthYearOnly
+    ? ''
+    : `<select id="dca-day" class="calc-date-select" aria-label="Day">${dayOpts}</select>`;
+
+  const order = monthYearOnly
+    ? monthSel + yearSel
+    : (I18N.lang === 'en' ? monthSel + daySel + yearSel : daySel + monthSel + yearSel);
+
+  return `<div class="calc-date-inline">${order}</div>`;
+}
+
+function applyDcaStartDateFromControls(root) {
+  const monthEl = root.querySelector('#dca-month');
+  const yearEl = root.querySelector('#dca-year');
+  if (!monthEl || !yearEl) return;
+  const month = parseInt(monthEl.value, 10);
+  const year = parseInt(yearEl.value, 10);
+  let day = 1;
+  const dayEl = root.querySelector('#dca-day');
+  if (dayEl) day = parseInt(dayEl.value, 10) || 1;
+  else if (dcaState.frequency !== 'monthly' && dcaState.startDate) {
+    day = dcaState.startDate.getDate();
+  }
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  day = Math.min(Math.max(1, day), lastDay);
+  let next = new Date(year, month, day);
+  const first = dcaState.chartData[0] ? new Date(dcaState.chartData[0].t) : null;
+  const maxDate = new Date();
+  if (first && next < first) next = new Date(first);
+  if (next > maxDate) next = new Date(maxDate);
+  dcaState.startDate = next;
+  const maxYears = dcaMaxYears();
+  const yrs = parseInt(dcaState.years, 10);
+  if (!isNaN(yrs) && yrs > maxYears && maxYears > 0) dcaState.years = String(maxYears);
+  recomputeDcaResults();
+  scheduleDcaResultsRefresh();
 }
 
 function openFeeConfig() {
@@ -4737,6 +5282,7 @@ function openFeeConfig() {
   openCalcSheet({
     title: I18N.t('position.fees.configTitle'),
     html,
+    presentation: 'modal',
     onMount: (body) => {
       body.querySelectorAll('[data-fee]').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -4787,15 +5333,6 @@ function resultDividerHtml() {
   return `<div class="calc-divider"></div>`;
 }
 
-function formatDcaStartLabel(date, monthYearOnly) {
-  const months = I18N.lang === 'en' ? MONTH_NAMES_EN : MONTH_NAMES_PT;
-  if (monthYearOnly) return `${months[date.getMonth()]} ${date.getFullYear()}`;
-  const dd = String(date.getDate()).padStart(2, '0');
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const yyyy = date.getFullYear();
-  return I18N.lang === 'en' ? `${mm}/${dd}/${yyyy}` : `${dd}/${mm}/${yyyy}`;
-}
-
 function defaultDcaStartDate() {
   const d = new Date();
   d.setFullYear(d.getFullYear() - 3);
@@ -4824,9 +5361,43 @@ function dcaMaxYears() {
   return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24 * 365.25)));
 }
 
+/**
+ * Full daily series for DCA — same layers as market charts, but without
+ * trimming early history (DCA needs the whole coin lifetime, not last N days).
+ *
+ *   1) bundled JSON (data/charts/*.json)
+ *   2.5) Worker GET /chart-delta (KV — keeps recent ~90d fresh)
+ *   3) CoinGecko market_chart gap-fill when still >1 day behind
+ *
+ * Bundles ship ~monthly; without delta, HYPE/etc stop at last release date
+ * and "valor atual" / late purchases go stale.
+ */
 async function loadDcaChartData(coinId) {
   const bundled = await loadBundledChart(coinId);
-  return bundled.points || [];
+  const bundledPoints = bundled.points || [];
+  let localPoints = bundledPoints;
+
+  try {
+    const delta = await getChartDelta();
+    const deltaPts = deltaPointsForCoin(delta, coinId);
+    if (deltaPts.length) localPoints = mergeAndDedup(localPoints, deltaPts);
+  } catch (e) { /* keep bundle */ }
+
+  const lastKnownTs = localPoints.length ? localPoints[localPoints.length - 1].t : 0;
+  const gapDays = lastKnownTs
+    ? Math.ceil((Date.now() - lastKnownTs) / ONE_DAY_MS)
+    : CHART_GAP_MAX_DAYS;
+
+  if (gapDays > 1) {
+    try {
+      const fresh = await fetchGapFromApi(coinId, gapDays);
+      if (fresh.length) localPoints = mergeAndDedup(localPoints, fresh);
+    } catch (e) {
+      // Offline / rate limit — keep bundle+delta; better partial than empty.
+    }
+  }
+
+  return localPoints;
 }
 
 function recomputeDcaResults() {
@@ -4912,9 +5483,71 @@ function buildDcaChartMetrics(allPriceData, purchases, width, height) {
   };
 }
 
+/**
+ * Paint when the host has a real width; observe resizes so a first paint that
+ * landed while view-dca was still display:none (width 0) re-runs after layout,
+ * and so window/sidebar width changes don't leave a stretched SVG.
+ */
+function ensureDcaChartHost(host, tipEl, baseOpts) {
+  if (!host) return;
+  if (dcaState.chartRo) {
+    try { dcaState.chartRo.disconnect(); } catch (e) {}
+    dcaState.chartRo = null;
+  }
+  dcaState.lastPaintW = 0;
+
+  const paint = (playEntrance) => {
+    if (!host.isConnected || !dcaState.results || dcaState.results.purchases.length < 2) return;
+    const w = Math.round(host.clientWidth);
+    if (w < 40) return;
+    // Skip no-op resizes (sub-pixel / scrub repaints handle their own path).
+    if (w === dcaState.lastPaintW && dcaState.chartGeom && !playEntrance && !dcaState.scrub) return;
+    dcaState.lastPaintW = w;
+    paintDcaChart(host, tipEl, {
+      allPriceData: baseOpts.allPriceData,
+      purchases: baseOpts.purchases,
+      coinId: baseOpts.coinId,
+      playEntrance: !!playEntrance,
+      scrub: dcaState.scrub,
+    });
+  };
+
+  paint(true);
+
+  if (typeof ResizeObserver !== 'undefined') {
+    let first = true;
+    dcaState.chartRo = new ResizeObserver(() => {
+      // First RO fire is the initial observation — already painted above when
+      // width was ready; only re-paint when size actually changes (or when the
+      // first paint was skipped because width was 0).
+      if (first) {
+        first = false;
+        if (dcaState.lastPaintW > 0) return;
+      }
+      paint(dcaState.lastPaintW === 0);
+    });
+    dcaState.chartRo.observe(host);
+  } else if (dcaState.lastPaintW === 0) {
+    // No RO: poll a few frames through the view fade-in window.
+    let tries = 0;
+    const tick = () => {
+      if (!host.isConnected || dcaState.lastPaintW > 0 || tries++ > 30) return;
+      paint(true);
+      if (dcaState.lastPaintW === 0) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+}
+
 function paintDcaChart(host, tipEl, opts) {
   const { allPriceData, purchases, coinId, playEntrance = true } = opts;
-  const width = host.clientWidth || host.parentElement?.clientWidth || 320;
+  // Only trust the host's laid-out width. Parent/fallback sizes are wrong
+  // (card padding, or a stale 320 default): with viewBox aspect-ratio the SVG
+  // then grows taller than the 180px host and paints past the card.
+  // view-dca may still be display:none while chart data loads (race with
+  // transitionViews) — clientWidth is 0 then; ensureDcaChartHost handles retry.
+  const width = Math.round(host.clientWidth);
+  if (width < 40) return null;
   const height = DCA_CHART_H;
   const metrics = buildDcaChartMetrics(allPriceData, purchases, width, height);
   dcaState.chartGeom = metrics;
@@ -5139,7 +5772,6 @@ function renderDcaBody() {
   if (!body) return;
   if (!dcaState.startDate) dcaState.startDate = defaultDcaStartDate();
   const sym = calcCoinSym(dcaState.coinId);
-  const monthYearOnly = dcaState.frequency === 'monthly';
   const rangeHint = dcaDataRangeHint(dcaState.chartData);
   const freqSeg =
     `<div class="calc-freq"><div class="mm__seg" role="tablist" id="dca-freq">` +
@@ -5225,10 +5857,7 @@ function renderDcaBody() {
       `<div class="calc-date-row">` +
         `<div class="calc-field flex">` +
           `<label class="calc-field__label">${escapeHtml(I18N.t('dca.startDate'))}</label>` +
-          `<button type="button" class="calc-date-btn" id="dca-date-btn">` +
-            `<span>${escapeHtml(formatDcaStartLabel(dcaState.startDate, monthYearOnly))}</span>` +
-            `<svg class="calc-date-btn__chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>` +
-          `</button>` +
+          dcaStartDateControlsHtml() +
         `</div>` +
         calcFieldHtml({
           id: 'dca-years', label: I18N.t('dca.period'), value: dcaState.years,
@@ -5246,7 +5875,7 @@ function renderDcaBody() {
       dcaState.chartData = await loadDcaChartData(id);
       recomputeDcaResults();
       renderDcaBody();
-    });
+    }, coinBtn);
   });
 
   body.querySelectorAll('#dca-freq [data-freq]').forEach((btn) => {
@@ -5279,36 +5908,22 @@ function renderDcaBody() {
     scheduleDcaResultsRefresh();
   });
 
-  const dateBtn = body.querySelector('#dca-date-btn');
-  if (dateBtn) dateBtn.addEventListener('click', () => {
-    const first = dcaState.chartData[0] ? new Date(dcaState.chartData[0].t) : null;
-    openDatePicker({
-      date: dcaState.startDate,
-      minDate: first,
-      maxDate: new Date(),
-      monthYearOnly: dcaState.frequency === 'monthly',
-      onConfirm: (d) => {
-        dcaState.startDate = d;
-        const maxY = dcaMaxYears();
-        const yrs = parseInt(dcaState.years, 10);
-        if (!isNaN(yrs) && yrs > maxY && maxY > 0) dcaState.years = String(maxY);
-        recomputeDcaResults();
-        renderDcaBody();
-      },
-    });
+  ['#dca-month', '#dca-year', '#dca-day'].forEach((sel) => {
+    const el = body.querySelector(sel);
+    if (el) el.addEventListener('change', () => applyDcaStartDateFromControls(body));
   });
 
-  // Paint chart after layout
+  // Paint chart after layout (and again when the host gets a real width —
+  // view may still be display:none during the page fade-in).
   if (r && r.purchases.length > 1) {
     requestAnimationFrame(() => {
       const host = body.querySelector('#dca-chart-host');
       const tip = body.querySelector('#dca-chart-tip');
       if (!host) return;
-      paintDcaChart(host, tip, {
+      ensureDcaChartHost(host, tip, {
         allPriceData: dcaState.chartData,
         purchases: r.purchases,
         coinId: dcaState.coinId,
-        playEntrance: true,
       });
       wireDcaChartScrub(host);
     });
@@ -5600,17 +6215,14 @@ async function loadDcaPage() {
   dcaState.chartData = await loadDcaChartData(dcaState.coinId);
   recomputeDcaResults();
   renderDcaBody();
-  try { $('dca-back')?.focus({ preventScroll: true }); } catch (e) {}
 }
 
 function loadPosPage() {
   loadPosFromStorage();
   renderPosBody();
-  try { $('pos-back')?.focus({ preventScroll: true }); } catch (e) {}
 }
 
 function openDcaCalculator() {
-  closeMenu();
   setView('dca');
 }
 
@@ -5620,7 +6232,6 @@ function closeDcaCalculator() {
 }
 
 function openPosCalculator() {
-  closeMenu();
   setView('pos');
 }
 
@@ -5650,28 +6261,31 @@ function handleCalcLinkClick(e) {
 
 // ── Boot ──────────────────────────────────────────────────────────────
 applyTheme();
-// Keep the desktop lesson panel height in sync with measured chrome (topbar + lang banner).
-// Also remeasure the bottom post-translation bar so modal scroll padding stays accurate.
+// Keep the desktop lesson panel height in sync with measured chrome (lang banner).
 window.addEventListener('resize', () => {
   syncLessonPanelChrome();
-  syncPostLangBannerHeight();
+  // Crossing the desktop breakpoint: drop drawer open state / re-apply rail.
+  if (isDesktopSidebar()) {
+    setSidebarOpen(false);
+    document.body.style.overflow = '';
+  } else {
+    // Leaving desktop: clear rail classes so the overlay drawer is always full-width.
+    const app = $('app');
+    if (app) {
+      app.classList.remove('is-sidebar-rail');
+      // Keep collapsed preference in storage but don't apply rail layout on mobile.
+    }
+  }
+  updateSidebarChromeAria();
 });
 if (typeof ResizeObserver !== 'undefined') {
   const ro = new ResizeObserver(() => syncLessonPanelChrome());
-  const topbar = document.querySelector('.topbar');
   const banner = $('lang-banner');
-  if (topbar) ro.observe(topbar);
+  const mobileTop = $('mobile-topbar');
   if (banner) ro.observe(banner);
+  if (mobileTop) ro.observe(mobileTop);
 }
-$('user-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(); });
-document.addEventListener('click', (e) => {
-  if (menuOpen() && !e.target.closest('.user')) closeMenu();
-});
-// Scrolling dismisses the popover — it is anchored to the topbar and would otherwise drift
-// or hang over the content. `capture` catches scrolls on inner containers (the modal, a
-// list) too, not just the window. `passive` keeps it off the scroll's critical path.
 window.addEventListener('scroll', () => {
-  if (menuOpen()) closeMenu();
   // Tooltip is position:fixed to the tap point — hide on scroll so it does not drift.
   if ($('glossary-tooltip-root') && !$('glossary-tooltip-root').hidden) hideGlossaryTooltip();
   if (currentView === 'glossary') updateGlossaryScrollSpy();
@@ -5680,18 +6294,36 @@ document.querySelectorAll('#menu-lang button').forEach((b) =>
   b.addEventListener('click', () => onLangChange(b.dataset.lang)));
 document.querySelectorAll('#menu-theme button').forEach((b) =>
   b.addEventListener('click', () => setThemePref(b.dataset.themePref)));
-$('menu-logout').addEventListener('click', signOut);
-$('menu-notif').addEventListener('click', enableNotifications);
-// Glossary (app Mais → Glossário)
-const menuGlossary = $('menu-glossary');
-if (menuGlossary) {
-  menuGlossary.addEventListener('click', () => {
-    closeMenu();
-    setView('glossary');
+const menuThemeCycle = $('menu-theme-cycle');
+if (menuThemeCycle) menuThemeCycle.addEventListener('click', () => cycleThemePref());
+const userMenuTrigger = $('user-menu-trigger');
+if (userMenuTrigger) {
+  userMenuTrigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleUserPopover();
   });
 }
-const glossaryBack = $('glossary-back');
-if (glossaryBack) glossaryBack.addEventListener('click', () => setView('feed'));
+const userPopover = $('user-popover');
+if (userPopover) {
+  userPopover.addEventListener('click', (e) => e.stopPropagation());
+}
+document.addEventListener('click', () => {
+  if (userPopoverOpen()) closeUserPopover();
+});
+const menuLogout = $('menu-logout');
+if (menuLogout) {
+  menuLogout.addEventListener('click', () => {
+    closeUserPopover();
+    signOut();
+  });
+}
+const menuNotifRow = $('menu-notif-row');
+if (menuNotifRow) {
+  menuNotifRow.addEventListener('click', (e) => {
+    e.stopPropagation();
+    onNotifSwitchClick();
+  });
+}
 const glossarySearch = $('glossary-search');
 if (glossarySearch) {
   glossarySearch.addEventListener('input', () => {
@@ -5722,15 +6354,7 @@ wireGlossaryTooltipRoot($('feed-list'));
 wireGlossaryTooltipRoot($('modal-content'));
 wireGlossaryTooltipRoot($('lesson-panel-content'));
 
-// Calculators (full-page views, same as Glossary)
-const menuDca = $('menu-dca');
-const menuPos = $('menu-pos');
-if (menuDca) menuDca.addEventListener('click', () => openDcaCalculator());
-if (menuPos) menuPos.addEventListener('click', () => openPosCalculator());
-const dcaBack = $('dca-back');
-const posBack = $('pos-back');
-if (dcaBack) dcaBack.addEventListener('click', () => closeDcaCalculator());
-if (posBack) posBack.addEventListener('click', () => closePosCalculator());
+// Calculators (full-page views)
 const calcSheetClose = $('calc-sheet-close');
 const calcSheetBackdrop = $('calc-sheet-backdrop');
 if (calcSheetClose) calcSheetClose.addEventListener('click', closeCalcSheet);
@@ -5826,8 +6450,51 @@ window.addEventListener('resize', () => {
   if (isMarketModalOpen() && mmState.points && !mmState.loading) renderMarketChart();
 });
 
-document.querySelectorAll('#viewbar button').forEach((b) =>
-  b.addEventListener('click', () => { if (b.dataset.view !== currentView) setView(b.dataset.view); }));
+// Sidebar navigation (Feed / Estudos / tools).
+document.querySelectorAll('#sidebar-nav .sidebar__item').forEach((b) => {
+  b.addEventListener('click', () => {
+    if (b.dataset.view !== currentView) setView(b.dataset.view);
+    else closeSidebarDrawer();
+  });
+  // Collapsed rail tooltips use position:fixed — pin --tip-x/y so they aren’t
+  // clipped by overflow on .sidebar__item / .sidebar__nav.
+  const pinTip = () => {
+    if (!isDesktopSidebar() || !isSidebarCollapsed()) return;
+    const r = b.getBoundingClientRect();
+    b.style.setProperty('--tip-x', `${Math.round(r.right + 12)}px`);
+    b.style.setProperty('--tip-y', `${Math.round(r.top + r.height / 2)}px`);
+  };
+  b.addEventListener('pointerenter', pinTip);
+  b.addEventListener('focus', pinTip);
+});
+// Theme cycle tooltip (collapsed rail) — same fixed positioning as nav items.
+const menuThemeCycleBtn = $('menu-theme-cycle');
+if (menuThemeCycleBtn) {
+  const pinThemeTip = () => {
+    if (!isDesktopSidebar() || !isSidebarCollapsed()) return;
+    const r = menuThemeCycleBtn.getBoundingClientRect();
+    menuThemeCycleBtn.style.setProperty('--tip-x', `${Math.round(r.right + 12)}px`);
+    menuThemeCycleBtn.style.setProperty('--tip-y', `${Math.round(r.top + r.height / 2)}px`);
+  };
+  menuThemeCycleBtn.addEventListener('pointerenter', pinThemeTip);
+  menuThemeCycleBtn.addEventListener('focus', pinThemeTip);
+}
+const sidebarToggle = $('sidebar-toggle');
+if (sidebarToggle) {
+  sidebarToggle.addEventListener('click', () => {
+    if (isDesktopSidebar()) setSidebarCollapsed(!isSidebarCollapsed());
+    else setSidebarOpen(!isSidebarOpen());
+  });
+}
+const sidebarFab = $('sidebar-fab');
+if (sidebarFab) {
+  sidebarFab.addEventListener('click', () => setSidebarOpen(true));
+}
+const sidebarBackdrop = $('sidebar-backdrop');
+if (sidebarBackdrop) {
+  sidebarBackdrop.addEventListener('click', () => setSidebarOpen(false));
+}
+initSidebar();
 // Body images → fullscreen viewer (modal + desktop lesson panel).
 // Cover images are decorative headers — not zoomable. Glossary terms use hover, not click.
 function onContentImageClick(e) {
@@ -5862,19 +6529,25 @@ document.addEventListener('keydown', (e) => {
   if (closeAnyCalculator()) return;
   if (!$('market-modal').classList.contains('hidden')) { closeMarketModal(); return; }
   if (!$('indicator-modal').classList.contains('hidden')) { closeIndicatorModal(); return; }
-  closeModal(); closeMenu();
+  if (userPopoverOpen()) { closeUserPopover(); return; }
+  if (!isDesktopSidebar() && isSidebarOpen()) { closeSidebarDrawer(); return; }
+  closeModal();
 });
 // Back/forward: re-derive the whole UI from the URL, so view + modal stay in step.
 window.addEventListener('popstate', syncFromUrl);
 document.querySelectorAll('#login-lang button').forEach((b) =>
   b.addEventListener('click', () => onLangChange(b.dataset.lang)));
 $('lang-banner-close').addEventListener('click', () => {
-  // The same DOM banner serves site-locale and post-locale offers. Persist both
-  // dismissals so neither reappears immediately after the user closes it.
   localStorage.setItem(LANG_BANNER_KEY, '1');
-  try { sessionStorage.setItem(POST_LANG_BANNER_KEY, '1'); } catch (e) {}
   hideLangBanner();
 });
+const postLangClose = $('post-lang-banner-close');
+if (postLangClose) {
+  postLangClose.addEventListener('click', () => {
+    try { sessionStorage.setItem(POST_LANG_BANNER_KEY, '1'); } catch (e) {}
+    hidePostLangBanner();
+  });
+}
 // Register the service worker for app-shell/asset caching (push permission is separate).
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
