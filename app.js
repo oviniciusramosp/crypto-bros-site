@@ -6551,6 +6551,7 @@ function onContentImageClick(e) {
   if (e.target.closest('.glossary-term')) return;
   if (e.target.closest('.nb-bookmark')) return; // favicon/og:image belong to the link
   if (e.target.closest('.modal__cover')) return; // post/lesson cover: no lightbox
+  if (e.target.closest('.nb-price')) return; // coin marks in price widgets: decorative, not zoomable
   // Progressive wrappers: always open the full-res layer, not the blur thumb.
   const wrap = e.target.closest('.lazy-img');
   if (wrap) {

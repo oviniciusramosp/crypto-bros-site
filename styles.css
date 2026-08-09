@@ -1473,6 +1473,9 @@ body.modal-open {
 .modal__content .lazy-img, .modal__content .nb-figure .lazy-img { cursor: zoom-in; }
 /* A bookmark's thumb/favicon are part of a link, not zoomable content. */
 .modal__content .nb-bookmark img { cursor: pointer; }
+/* Price widget coin marks are decorative chrome — not content images. */
+.modal__content .nb-price__icon,
+.card__preview .nb-price__icon { cursor: default; }
 
 /* Notion block elements (shared by card preview + modal content) */
 .nb-hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
