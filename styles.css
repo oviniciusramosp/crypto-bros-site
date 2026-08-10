@@ -25,6 +25,9 @@
   --donut-track: rgba(255, 255, 255, 0.08);
   /* Bookmark card (app parity — BookmarkBlock.tsx) */
   --bookmark-bg: rgba(255, 255, 255, 0.05);
+  /* Skeleton bone paint — must contrast with --surface/--bg (not --surface-highlight,
+     which in light is nearly identical to --surface and becomes invisible). */
+  --skeleton: #2A2A2A;
 
   --cat-Mercado: #60A5FA;
   --cat-Estudos: #A78BFA;
@@ -89,6 +92,8 @@
   --seg-active-text: #F15B24;
   --donut-track: rgba(0, 0, 0, 0.06);
   --bookmark-bg: rgba(0, 0, 0, 0.03);
+  /* Stronger than --bg-tertiary so the pulse (→ opacity 0.5) still reads on --surface. */
+  --skeleton: #D4D4D8;
 }
 
 /* The app's own icon font (assets/fonts/cryptobros-icons.ttf, generated with IcoMoon).
@@ -1747,7 +1752,7 @@ body.modal-open {
 }
 .mm__chart-sk {
   height: 200px; margin: 0 var(--pad-screen);
-  border-radius: 8px; background: var(--surface-highlight);
+  border-radius: 8px; background: var(--skeleton);
   animation: pulse 1.4s ease-in-out infinite;
 }
 .mm__tooltip {
@@ -1887,6 +1892,53 @@ body.modal-open {
   border-radius: 12px;
   overflow: hidden;
   background: color-mix(in srgb, var(--text) 3%, transparent);
+  /* Interactive scrub (app LineChart interactive: true on inline charts) */
+  touch-action: none;
+  display: flex;
+  flex-direction: column;
+}
+/* Half-size charts (app CHART_HEIGHT_HALF = 150) — height set inline + class */
+.nb-chart.nb-chart--half:not(.nb-chart--with-head):not(.nb-chart--rsi) { height: 150px; }
+.nb-chart.nb-chart--rsi:not(.nb-chart--with-head) { height: 100px; }
+.nb-chart.nb-chart--rsi.nb-chart--half:not(.nb-chart--with-head) { height: 75px; }
+/* With header, height is content-driven (head + fixed canvas) */
+.nb-chart.nb-chart--with-head {
+  height: auto;
+  min-height: 0;
+}
+@media (hover: hover) and (pointer: fine) {
+  .nb-chart { cursor: crosshair; }
+}
+/* Chart header (app ChartBlock labels) */
+.nb-chart__head {
+  flex: 0 0 auto;
+  padding: 10px 12px 4px;
+  min-width: 0;
+}
+.nb-chart__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nb-chart__sep { opacity: 0.5; font-weight: 500; }
+.nb-chart__pct {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.nb-chart__pct.up { color: var(--success, #22C55E); }
+.nb-chart__pct.down { color: var(--error, #EF4444); }
+.nb-chart__since {
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--text-tertiary);
+  margin-top: 1px;
 }
 /* Half charts + price widgets are paired into .nb-half-row by renderBlocks
    (app NotionRenderer groupHalfCharts). Solo half items get a spacer sibling. */
@@ -1911,11 +1963,74 @@ body.modal-open {
 }
 .nb-chart__sk {
   width: 100%; height: 100%;
-  background: var(--surface-highlight);
+  background: var(--skeleton);
   animation: pulse 1.4s ease-in-out infinite;
 }
-.nb-chart__canvas { width: 100%; height: 100%; }
+.nb-chart__plot {
+  position: relative;
+  width: 100%;
+  flex: 0 0 auto;
+  min-height: 0;
+}
+.nb-chart:not(.nb-chart--with-head) .nb-chart__plot {
+  flex: 1 1 auto;
+  height: 100%;
+}
+.nb-chart__canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
 .nb-chart__tip { /* reuses .mm__tooltip */ }
+/* Tip/legend are positioned inside .nb-chart__plot */
+.nb-chart__plot .nb-chart__tip { position: absolute; }
+/* Legend — app ChartBlock emaLegend / cycle legend (bottom-centered strip) */
+.nb-chart__legend {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  pointer-events: none;
+  z-index: 1;
+}
+.nb-chart__legend[hidden] { display: none; }
+.nb-chart__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.nb-chart__legend-line {
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+.nb-chart__legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  flex: 0 0 auto;
+}
+.nb-chart__legend-label {
+  font-size: 10px;
+  line-height: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.nb-chart__tip-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
 
 /* App PriceWidgetBlock: always half-width (paired), card fills the cell. */
 .nb-price { margin: 10px 0; min-width: 0; }
@@ -1945,12 +2060,12 @@ body.modal-open {
 .nb-price__unknown { font-size: 12px; color: var(--text-tertiary); }
 .nb-price__sk-icon {
   width: 24px; height: 24px; border-radius: 12px; flex: 0 0 auto;
-  background: var(--surface-highlight); animation: pulse 1.4s ease-in-out infinite;
+  background: var(--skeleton); animation: pulse 1.4s ease-in-out infinite;
 }
 .nb-price__sk-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 auto; }
 .nb-price__sk-line {
   width: 48px; height: 12px; border-radius: 4px;
-  background: var(--surface-highlight); animation: pulse 1.4s ease-in-out infinite;
+  background: var(--skeleton); animation: pulse 1.4s ease-in-out infinite;
 }
 .nb-price__sk-line.short { width: 72px; }
 
@@ -2272,15 +2387,15 @@ body.modal-open {
 .state__icon svg { width: 48px; height: 48px; display: block; }
 
 .skeleton { animation: pulse 1.4s ease-in-out infinite; }
-.skeleton .card__cover { background: var(--surface-highlight); }
-.skeleton .sk-line { height: 14px; border-radius: 6px; background: var(--surface-highlight); margin: 8px 0; }
+.skeleton .card__cover { background: var(--skeleton); }
+.skeleton .sk-line { height: 14px; border-radius: 6px; background: var(--skeleton); margin: 8px 0; }
 .skeleton .sk-line.title { height: 24px; width: 70%; }
 .skeleton .sk-line.short { width: 40%; }
 
 /* Module/lesson skeletons — paint only. Geometry comes from the real classes
    (.module__header, .lesson, .lesson__badge, …) so padding/gap/line-height match. */
 .sk-block {
-  background: var(--surface-highlight);
+  background: var(--skeleton);
   border-radius: 6px;
   color: transparent !important; /* kill any inherited text metrics leaking in */
   overflow: hidden;
@@ -2299,7 +2414,7 @@ body.modal-open {
 }
 .sk-block--badge {
   /* .lesson__badge: 32×32 pill — keep its own bg over the accent tint */
-  background: var(--surface-highlight) !important;
+  background: var(--skeleton) !important;
   color: transparent !important;
 }
 .sk-block--lesson-title {
@@ -2334,7 +2449,7 @@ body.modal-open {
   height: 26px; width: 46%; max-width: 220px;
   border-radius: var(--radius-pill);
   margin-bottom: 10px; padding: 0;
-  background: var(--surface-highlight) !important;
+  background: var(--skeleton) !important;
   color: transparent !important;
 }
 .sk-block--detail-title {
@@ -3047,7 +3162,7 @@ body.modal-open {
 .glossary-skel__section { margin-top: 20px; }
 .glossary-skel__letter {
   width: 24px; height: 24px; border-radius: 4px;
-  background: var(--bg-tertiary); margin-bottom: 8px;
+  background: var(--skeleton); margin-bottom: 8px;
   animation: pulse 1.4s ease-in-out infinite;
 }
 .glossary-skel__card {
@@ -3055,11 +3170,11 @@ body.modal-open {
   padding: var(--pad-screen); display: flex; flex-direction: column; gap: 8px;
 }
 .glossary-skel__term {
-  width: 50%; height: 20px; border-radius: 4px; background: var(--bg-tertiary);
+  width: 50%; height: 20px; border-radius: 4px; background: var(--skeleton);
   animation: pulse 1.4s ease-in-out infinite;
 }
 .glossary-skel__def {
-  width: 100%; height: 40px; border-radius: 4px; background: var(--bg-tertiary);
+  width: 100%; height: 40px; border-radius: 4px; background: var(--skeleton);
   animation: pulse 1.4s ease-in-out infinite;
 }
 

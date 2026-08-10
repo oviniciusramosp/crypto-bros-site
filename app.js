@@ -820,8 +820,11 @@ const MARKET_COINS = [
 const COINS = MARKET_COINS.slice(0, 9);
 const MARQUEE_ID_SET = new Set(COINS.map((c) => c.id));
 
-/** Ticker → CoinGecko id (app SYMBOL_TO_COINGECKO). */
-const SYMBOL_TO_COINGECKO = Object.fromEntries(MARKET_COINS.map((c) => [c.sym, c.id]));
+/** Ticker → CoinGecko id (app SYMBOL_TO_COINGECKO). Includes GOLD/SILVER used in posts. */
+const SYMBOL_TO_COINGECKO = Object.assign(
+  Object.fromEntries(MARKET_COINS.map((c) => [c.sym, c.id])),
+  { GOLD: 'pax-gold', SILVER: 'kinesis-silver' },
+);
 /** Per-coin chart accent (app COIN_COLORS). BTC falls back to theme accent. */
 const COIN_COLORS = {
   ethereum: '#8B5CF6', cardano: '#8B5CF6', solana: '#8B5CF6',
@@ -867,10 +870,41 @@ const CHART_PERIODS = [
   { key: '1y', days: 365, label: '1Y' },
 ];
 const CHART_HEIGHT = 200;
-const CHART_HEIGHT_INLINE = 200;
+const CHART_HEIGHT_INLINE = 200; // full-size line/candle/fng/cycle (app CHART_HEIGHT_FULL)
+const CHART_HEIGHT_HALF = 150;   // size:half for line/candle/fng/cycle
+const RSI_HEIGHT_FULL = 100;
+const RSI_HEIGHT_HALF = 75;
 const CHART_PAD = { top: 16, right: 20, bottom: 16, left: 0 }; // DEFAULT_PADDING
 const CHART_PAD_INLINE = { top: 8, right: 20, bottom: 8, left: 0 }; // INLINE_PADDING
+const RSI_PAD_INLINE = { top: 2, right: 20, bottom: 0, left: 0 };
+// Candle metrics (app candleConstants)
+const CANDLE_MIN_WIDTH = 1.5;
+const CANDLE_MAX_WIDTH = 14;
+const CANDLE_GAP_RATIO = 0.4;
+const WICK_WIDTH = 1.5;
+const MIN_BODY_HEIGHT = 1.5;
+const BULLISH_COLOR = '#22C55E';
+const BEARISH_COLOR = '#EF4444';
+// RSI (app rsiConstants)
+const RSI_PERIOD = 14;
+const RSI_OVERBOUGHT = 70;
+const RSI_OVERSOLD = 30;
+const RSI_MID = 50;
+const RSI_ZONE_OVERBOUGHT = '#EF4444';
+const RSI_ZONE_OVERSOLD = '#22C55E';
+// F&G chart colors (app fngConstants)
+const FNG_LEVEL_COLORS = {
+  extremeFear: '#EF4444', fear: '#F97316', neutral: '#9CA3AF',
+  greed: '#86EFAC', extremeGreed: '#22C55E',
+};
+const FNG_MUTED_COLOR = 'rgba(156, 163, 175, 0.3)';
+const DEFAULT_FNG_LEVELS = { ef: true, f: true, n: true, g: true, eg: true };
+const FNG_CLASS_TO_KEY = {
+  extremeFear: 'ef', fear: 'f', neutral: 'n', greed: 'g', extremeGreed: 'eg',
+};
+const SUB_DAILY_INTERVALS = new Set(['15m', '1h', '4h', '12h']);
 const PRICE_PADDING_RATIO = 0.08;
+const OVERLAY_PADDING_RATIO = 0.06; // app chartConstants — room for icons/labels beyond anchors
 const CHART_CACHE_TTL = 5 * 60 * 1000; // app DEFAULT_CHART_REFETCH_MS
 const CHART_GAP_MAX_DAYS = 365; // CoinGecko free tier max per request
 const CHART_ZOOM_MS = 600; // TIMING.CHART_ZOOM
@@ -881,6 +915,34 @@ const CHART_SLIDE_FROM = -40;
 /** Dot fill texture — app chartConstants DOT_SPACING / DOT_RADIUS */
 const DOT_SPACING = 8;
 const DOT_RADIUS = 1;
+// --- Overlay constants (app chartConstants + transforms) ---
+const EMA_COLORS = {
+  blue: '#3B82F6', purple: '#8B5CF6', green: '#22C55E', orange: '#F7931A',
+  red: '#EF4444', gray: '#9CA3AF', cyan: '#06B6D4', pink: '#E6007A',
+  amber: '#EAB308', brown: '#92400E', silver: '#C0C0C0', indigo: '#6366F1',
+};
+const EMA_STROKE_WIDTH = 1.5;
+const EMA_OPACITY = 0.7;
+const EMA_LEGEND_RESERVED_HEIGHT = 20;
+const EMA_WARMUP_MULTIPLIER = 4;
+const MAX_CHART_DAYS = 6000;
+const HLINE_STROKE_WIDTH = 1;
+const HLINE_DEFAULT_OPACITY = 0.6;
+const HLINE_DASH = [6, 4];
+const HLINE_DOT = [2, 3];
+const HLINE_LABEL_FONT_SIZE = 9;
+const HLINE_LABEL_DEFAULT_DISTANCE = 6;
+const ICON_MARKER_IONICON_SIZE = 14;
+const ICON_MARKER_EMOJI_SIZE = 12;
+const ICON_MARKER_GAP = 4;
+/** Pre-computed BTC weekly EMA keys in bundled JSON (app BTC_BUNDLED_EMAS). */
+const BTC_BUNDLED_EMA_KEYS = {
+  '50|w|c': 'ema_50w_c',
+  '100|w|c': 'ema_100w_c',
+  '200|w|c': 'ema_200w_c',
+  '250|w|l': 'ema_250w_l',
+  '450|w|l': 'ema_450w_l',
+};
 /** easeOutCubic as CSS cubic-bezier (Reanimated Easing.out(Easing.cubic)) */
 const EASE_OUT_CUBIC_CSS = 'cubic-bezier(0.215, 0.61, 0.355, 1)';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -1110,7 +1172,7 @@ async function loadBundledChart(coinId) {
   try {
     const res = await fetch(`./data/charts/${encodeURIComponent(coinId)}.json`);
     if (!res.ok) {
-      bundledChartCache[coinId] = { points: [], lastDate: null };
+      bundledChartCache[coinId] = { points: [], ohlc: [], ema: null, lastDate: null };
       return bundledChartCache[coinId];
     }
     const col = await res.json();
@@ -1122,11 +1184,34 @@ async function loadBundledChart(coinId) {
       if (isFinite(ts[i]) && isFinite(cs[i])) points.push({ t: ts[i], c: cs[i] });
     }
     points.sort((a, b) => a.t - b.t);
-    const entry = { points, lastDate: col.lastDate || null };
+    // Full OHLC for EMA on open/high/low fields (app CandleOhlcPoint[])
+    const ohlc = [];
+    const ot = col.ohlc_t || [];
+    const oo = col.ohlc_o || [];
+    const oh = col.ohlc_h || [];
+    const ol = col.ohlc_l || [];
+    const oc = col.ohlc_c || [];
+    for (let i = 0; i < ot.length; i++) {
+      if (!isFinite(ot[i])) continue;
+      ohlc.push({
+        t: ot[i],
+        o: oo[i], h: oh[i], l: ol[i], c: oc[i] != null ? oc[i] : cs[i],
+      });
+    }
+    ohlc.sort((a, b) => a.t - b.t);
+    // Pre-computed weekly EMA anchors (BTC only today)
+    let ema = null;
+    if (col.ema_week_t && col.ema_week_t.length) {
+      ema = { week_t: col.ema_week_t };
+      for (const key of Object.values(BTC_BUNDLED_EMA_KEYS)) {
+        if (col[key]) ema[key] = col[key];
+      }
+    }
+    const entry = { points, ohlc, ema, lastDate: col.lastDate || null };
     bundledChartCache[coinId] = entry;
     return entry;
   } catch (e) {
-    bundledChartCache[coinId] = { points: [], lastDate: null };
+    bundledChartCache[coinId] = { points: [], ohlc: [], ema: null, lastDate: null };
     return bundledChartCache[coinId];
   }
 }
@@ -1283,15 +1368,315 @@ async function fetchCoinChart(coinId, days = 365, endDate = null) {
   return getLayeredChartData(coinId, days);
 }
 
-function buildChartGeometry(sliced, width, height, pad) {
+// ── EMA math (app emaMath.ts + emaCalculator.ts, close + OHLC fields) ──
+
+function calculateEma(values, period) {
+  if (!values.length || period <= 0 || values.length < period) {
+    return values.map(() => null);
+  }
+  const result = new Array(values.length).fill(null);
+  const mult = 2 / (period + 1);
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += values[i];
+  let ema = sum / period;
+  result[period - 1] = ema;
+  for (let i = period; i < values.length; i++) {
+    ema = (values[i] - ema) * mult + ema;
+    result[i] = ema;
+  }
+  return result;
+}
+
+function getWeekKey(timestamp) {
+  const daysSinceEpoch = Math.floor(timestamp / ONE_DAY_MS);
+  // Unix epoch was Thursday; +3 shifts so Monday starts the week (app getWeekKey).
+  return Math.floor((daysSinceEpoch + 3) / 7);
+}
+
+function groupByCalendarWeek(timestamps) {
+  const weekEndIndices = [];
+  if (!timestamps.length) return weekEndIndices;
+  let currentWeek = getWeekKey(timestamps[0]);
+  let lastIdxInWeek = 0;
+  for (let i = 1; i < timestamps.length; i++) {
+    const week = getWeekKey(timestamps[i]);
+    if (week !== currentWeek) {
+      weekEndIndices.push(lastIdxInWeek);
+      currentWeek = week;
+    }
+    lastIdxInWeek = i;
+  }
+  weekEndIndices.push(lastIdxInWeek);
+  return weekEndIndices;
+}
+
+function interpolateAnchors(sparse) {
+  const out = sparse.slice();
+  let prevIdx = -1;
+  let prevVal = 0;
+  for (let i = 0; i < out.length; i++) {
+    if (out[i] != null) {
+      if (prevIdx >= 0) {
+        const span = i - prevIdx;
+        for (let j = prevIdx + 1; j < i; j++) {
+          const t = (j - prevIdx) / span;
+          out[j] = prevVal + t * (out[i] - prevVal);
+        }
+      }
+      prevIdx = i;
+      prevVal = out[i];
+    }
+  }
+  return out;
+}
+
+function ohlcFieldValue(point, field) {
+  if (field === 'o') return point.o;
+  if (field === 'h') return point.h;
+  if (field === 'l') return point.l;
+  return point.c;
+}
+
+function calculateWeeklyEmaFromValues(timestamps, values, period) {
+  if (!timestamps.length) return [];
+  const weekEndIndices = groupByCalendarWeek(timestamps);
+  const weeklyValues = weekEndIndices.map((i) => values[i]);
+  const weeklyEma = calculateEma(weeklyValues, period);
+  const daily = new Array(timestamps.length).fill(null);
+  for (let w = 0; w < weeklyEma.length; w++) {
+    if (weeklyEma[w] != null) daily[weekEndIndices[w]] = weeklyEma[w];
+  }
+  return interpolateAnchors(daily);
+}
+
+function getBundledEmaKey(coinId, period, unit, field) {
+  if (coinId !== 'bitcoin' || unit !== 'w') return null;
+  return BTC_BUNDLED_EMA_KEYS[`${period}|${unit}|${field}`] || null;
+}
+
+/**
+ * Bundle-backed weekly EMA (BTC canonical set). Falls back to dynamic calc.
+ * data: {t,c}[] aligned result; ohlc optional for non-close fields.
+ */
+function bundleBackedWeeklyEma(data, coinId, period, field, seriesKey, ohlc) {
+  const bundle = bundledChartCache[coinId];
+  if (!bundle || !bundle.ema || !bundle.ema.week_t || !bundle.ema[seriesKey]) {
+    const ts = data.map((d) => d.t);
+    const vals = field === 'c'
+      ? data.map((d) => d.c)
+      : (ohlc || []).map((d) => ohlcFieldValue(d, field));
+    const srcTs = field === 'c' ? ts : (ohlc || []).map((d) => d.t);
+    if (field !== 'c') {
+      if (!srcTs.length) return data.map(() => null);
+      // Map OHLC-aligned weekly EMA onto close-series timestamps
+      const ohlcEma = calculateWeeklyEmaFromValues(srcTs, vals, period);
+      const byTs = new Map();
+      for (let i = 0; i < srcTs.length; i++) byTs.set(srcTs[i], ohlcEma[i]);
+      return data.map((d) => (byTs.has(d.t) ? byTs.get(d.t) : null));
+    }
+    return calculateWeeklyEmaFromValues(ts, vals, period);
+  }
+
+  const bundledByWeek = new Map();
+  const weekTs = bundle.ema.week_t;
+  const weekValues = bundle.ema[seriesKey];
+  for (let i = 0; i < weekTs.length; i++) {
+    if (weekValues[i] != null) bundledByWeek.set(getWeekKey(weekTs[i]), weekValues[i]);
+  }
+  // Overlay Worker delta weekly anchors when present
+  const delta = chartDeltaCache && chartDeltaCache.data;
+  const deltaEma = delta && delta.coins && delta.coins[coinId] && delta.coins[coinId].ema;
+  if (deltaEma && deltaEma.week_t) {
+    const dv = deltaEma[seriesKey];
+    if (dv) {
+      for (let i = 0; i < deltaEma.week_t.length; i++) {
+        if (dv[i] != null) bundledByWeek.set(getWeekKey(deltaEma.week_t[i]), dv[i]);
+      }
+    }
+  }
+
+  let lastBundledWeek = -Infinity;
+  let lastBundledValue = null;
+  for (const [wk, v] of bundledByWeek) {
+    if (wk > lastBundledWeek) { lastBundledWeek = wk; lastBundledValue = v; }
+  }
+
+  let srcTs, srcVals;
+  if (field === 'c') {
+    srcTs = data.map((d) => d.t);
+    srcVals = data.map((d) => d.c);
+  } else if (ohlc && ohlc.length) {
+    srcTs = ohlc.map((d) => d.t);
+    srcVals = ohlc.map((d) => ohlcFieldValue(d, field));
+  } else {
+    return data.map(() => null);
+  }
+
+  const weekEndIndices = groupByCalendarWeek(srcTs);
+  const mult = 2 / (period + 1);
+  const anchorBySrcIdx = new Map();
+  let lastEma = lastBundledValue;
+  let lastEmaWeek = lastBundledWeek;
+  for (const idx of weekEndIndices) {
+    const wk = getWeekKey(srcTs[idx]);
+    const bundled = bundledByWeek.get(wk);
+    if (bundled !== undefined) {
+      anchorBySrcIdx.set(idx, bundled);
+      lastEma = bundled;
+      lastEmaWeek = wk;
+      continue;
+    }
+    if (lastEma == null || wk <= lastEmaWeek) continue;
+    const stepped = (srcVals[idx] - lastEma) * mult + lastEma;
+    anchorBySrcIdx.set(idx, stepped);
+    lastEma = stepped;
+    lastEmaWeek = wk;
+  }
+
+  const dataTsToIdx = new Map();
+  for (let i = 0; i < data.length; i++) dataTsToIdx.set(data[i].t, i);
+  const result = new Array(data.length).fill(null);
+  for (const [srcIdx, emaVal] of anchorBySrcIdx) {
+    const dataIdx = dataTsToIdx.get(srcTs[srcIdx]);
+    if (dataIdx !== undefined) result[dataIdx] = emaVal;
+  }
+  return interpolateAnchors(result);
+}
+
+/** Compute EMA series aligned 1:1 with `data` ({t,c}[]). App computeEmaValues. */
+function computeEmaValues(data, config, ohlc, coinId) {
+  const field = config.field || 'c';
+  if (coinId) {
+    const key = getBundledEmaKey(coinId, config.period, config.unit, field);
+    if (key) return bundleBackedWeeklyEma(data, coinId, config.period, field, key, ohlc);
+  }
+  if (field !== 'c' && ohlc && ohlc.length) {
+    const ts = ohlc.map((d) => d.t);
+    const vals = ohlc.map((d) => ohlcFieldValue(d, field));
+    const series = config.unit === 'w'
+      ? calculateWeeklyEmaFromValues(ts, vals, config.period)
+      : calculateEma(vals, config.period);
+    const byTs = new Map();
+    for (let i = 0; i < ts.length; i++) byTs.set(ts[i], series[i]);
+    // Align to close series; interpolate sparse non-nulls after mapping
+    const aligned = data.map((d) => (byTs.has(d.t) ? byTs.get(d.t) : null));
+    // If OHLC and close share timestamps (bundled), series is already dense.
+    // If some closes lack OHLC, leave nulls — LineChart does the same.
+    return aligned;
+  }
+  const ts = data.map((d) => d.t);
+  const closes = data.map((d) => d.c);
+  if (config.unit === 'w') return calculateWeeklyEmaFromValues(ts, closes, config.period);
+  return calculateEma(closes, config.period);
+}
+
+function emaWarmupDaysFor(overlays, coinId) {
+  if (!overlays || !overlays.length) return 0;
+  const allBundled = coinId && overlays.every((e) =>
+    getBundledEmaKey(coinId, e.period, e.unit, e.field || 'c'));
+  if (allBundled) return 0;
+  return overlays.reduce((max, ema) => {
+    const base = ema.unit === 'w' ? ema.period * 7 : ema.period;
+    return Math.max(max, base * EMA_WARMUP_MULTIPLIER);
+  }, 0);
+}
+
+function emaLegendLabel(ema) {
+  const unit = ema.unit === 'w' ? 'W' : 'D';
+  let label = `EMA ${ema.period} (${unit})`;
+  if (ema.field && ema.field !== 'c') {
+    label += ` ${ema.field === 'o' ? 'Open' : ema.field === 'h' ? 'High' : 'Low'}`;
+  }
+  return label;
+}
+
+// Solid Ionicons (viewBox 512) used as chart markers — common names from content.
+const CHART_ICON_PATHS = {
+  flag: '<path d="M80 480a16 16 0 01-16-16V68.13a24 24 0 0111.9-20.72C88 40.38 112.38 32 160 32c37.21 0 78.79 11.08 115.55 32.42C303.12 81.07 334.3 96 368 96a207.43 207.43 0 0051.44-6.45 32 32 0 0140.56 30.88V284.13a24 24 0 01-11.9 20.72C424 311.62 399.62 320 352 320c-37.21 0-78.79-11.08-115.55-32.42C208.88 270.93 177.69 256 144 256a207.43 207.43 0 00-51.44 6.45A32 32 0 0180 291.55z"/>',
+  'arrow-up': '<path d="M414 321.94L274.22 158.82a24 24 0 00-36.44 0L98 321.94c-13.34 15.57-2.28 39.62 18.22 39.62h36.3a16 16 0 0012.92-6.39L256 224.61l90.56 130.56a16 16 0 0012.92 6.39H395.8c20.5 0 31.56-24.05 18.2-39.62z"/>',
+  'arrow-down': '<path d="M98 190.06l139.78 163.12a24 24 0 0036.44 0L414 190.06c13.34-15.57 2.28-39.62-18.22-39.62h-36.3a16 16 0 00-12.92 6.39L256 287.39 165.44 156.83a16 16 0 00-12.92-6.39H116.2c-20.5 0-31.56 24.05-18.2 39.62z"/>',
+  'arrow-up-circle': '<path d="M256 48C141.13 48 48 141.13 48 256s93.13 208 208 208 208-93.13 208-208S370.87 48 256 48zm79.31 227.31a16 16 0 01-22.62 0L272 234.63V336a16 16 0 01-32 0V234.63l-40.69 40.68a16 16 0 01-22.62-22.62l68-68a16 16 0 0122.62 0l68 68a16 16 0 010 22.62z"/>',
+  'arrow-down-circle': '<path d="M256 464c114.87 0 208-93.13 208-208S370.87 48 256 48 48 141.13 48 256s93.13 208 208 208zm-79.31-227.31a16 16 0 0122.62 0L240 277.37V176a16 16 0 0132 0v101.37l40.69-40.68a16 16 0 0122.62 22.62l-68 68a16 16 0 01-22.62 0l-68-68a16 16 0 010-22.62z"/>',
+  star: '<path d="M394 480a16 16 0 01-9.39-3L256 383.76 127.39 477a16 16 0 01-24.55-18.08L153 310.35 23 221.2a16 16 0 019-29.2h160.38l48.4-148.95a16 16 0 0130.44 0l48.4 149H480a16 16 0 019.05 29.2L359 310.35l50.13 148.57A16 16 0 01394 480z"/>',
+  flash: '<path d="M194.82 496a18.36 18.36 0 01-18.1-21.53v-.11L204.83 320H96a16 16 0 01-12.44-26.06L302.73 23a18.45 18.45 0 0132.8 13.71c0 .3-.08.59-.13.89L307.19 192H416a16 16 0 0112.44 26.06L209.24 489a18.45 18.45 0 01-14.42 7z"/>',
+  pin: '<path d="M336 96a80 80 0 10-96 78.39v283.17a32.09 32.09 0 002.49 12.38l10.07 24a3.92 3.92 0 006.5 1.72l55.67-55.67a3.92 3.92 0 001.11-3.14V174.39A80.13 80.13 0 00336 96zm-80 56a56 56 0 1156-56 56.06 56.06 0 01-56 56z"/>',
+  'checkmark-circle': '<path d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208 208-93.31 208-208S370.69 48 256 48zm108.25 138.29l-134.4 160a16 16 0 01-12 5.71h-.27a16 16 0 01-11.89-5.3l-57.6-64a16 16 0 1123.78-21.4l45.29 50.32 122.59-145.83a16 16 0 0124.5 20.5z"/>',
+  'close-circle': '<path d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208 208-93.31 208-208S370.69 48 256 48zm75.31 260.69a16 16 0 11-22.62 22.62L256 278.63l-52.69 52.68a16 16 0 01-22.62-22.62L233.37 256l-52.68-52.69a16 16 0 0122.62-22.62L256 233.37l52.69-52.68a16 16 0 0122.62 22.62L278.63 256z"/>',
+  'alert-circle': '<path d="M256 48C141.31 48 48 141.31 48 256s93.31 208 208 208 208-93.31 208-208S370.69 48 256 48zm0 319.91a20 20 0 1120-20 20 20 0 01-20 20zm21.72-201.15l-5.74 122a16 16 0 01-32 0l-5.74-121.94v-.05a21.74 21.74 0 1143.44 0z"/>',
+  'information-circle': '<path d="M256 56C145.72 56 56 145.72 56 256s89.72 200 200 200 200-89.72 200-200S366.28 56 256 56zm0 82a26 26 0 11-26 26 26 26 0 0126-26zm48 226h-88a16 16 0 010-32h28v-88h-16a16 16 0 010-32h32a16 16 0 0116 16v104h28a16 16 0 010 32z"/>',
+  diamond: '<path d="M396.31 32H264l84.19 112.26zm-280.62 0H15.69l48.12 112.26zm28.62 0l48.12 112.26L240 32zm301 0h-83.31l-48.12 112.26zM15.69 480h131.62L99.19 367.74zm280.62 0H496.31l-48.12-112.26zM240 480l84.19-112.26L372.31 480zm-28.62 0L127.07 367.74 99.19 480zM52.19 352h407.62L288 160H224z"/>',
+  pulse: '<path d="M432 272a48.09 48.09 0 00-45.25 32h-39.22l-28.35-85.06a16 16 0 00-30.56.66l-44.51 155.76-52.33-314a16 16 0 00-31.3-1.25L99.51 304H48a16 16 0 000 32h64a16 16 0 0015.52-12.12l45.34-181.37 51.36 308.12A16 16 0 00239.1 464h.91a16 16 0 0015.37-11.6l49.8-174.28 15.64 46.94A16 16 0 00336 336h50.75A48 48 0 10432 272z"/>',
+  cash: '<path d="M424 80H88a56.06 56.06 0 00-56 56v240a56.06 56.06 0 0056 56h336a56.06 56.06 0 0056-56V136a56.06 56.06 0 00-56-56zm-89.34 197.47a16 16 0 01-20.9 9.91l-19.57-7.92v30.54a16 16 0 01-32 0v-38.15l-16-6.47V296a16 16 0 01-32 0v-33.58l-19.84-8a16 16 0 0111.88-30.09l5.86 2.37V204.08a16 16 0 0132 0v22.51l16 6.47V216a16 16 0 0132 0v25.67l20.49 8.29a16 16 0 01-9.92 30.51z"/>',
+  'trending-up': '<path d="M352 144h112v112"/><path d="M48 368l121.37-121.37a32 32 0 0145.26 0l50.74 50.74a32 32 0 0045.26 0L448 160"/>',
+  'trending-down': '<path d="M352 368h112V256"/><path d="M48 144l121.37 121.37a32 32 0 0045.26 0l50.74-50.74a32 32 0 0145.26 0L448 352"/>',
+  location: '<path d="M256 48c-79.5 0-144 61.39-144 137 0 87 96 224.87 131.25 272.49a15.77 15.77 0 0025.5 0C304 409.89 400 272.07 400 185c0-75.61-64.5-137-144-137z"/><circle cx="256" cy="192" r="48"/>',
+  'caret-up': '<path d="M414 321.94L274.22 158.82a24 24 0 00-36.44 0L98 321.94c-13.34 15.57-2.28 39.62 18.22 39.62h279.6c20.5 0 31.56-24.05 18.18-39.62z"/>',
+  'caret-down': '<path d="M98 190.06l139.78 163.12a24 24 0 0036.44 0L414 190.06c13.34-15.57 2.28-39.62-18.22-39.62H116.18c-20.5 0-31.56 24.05-18.18 39.62z"/>',
+};
+
+function chartIconMarkerSvg(marker) {
+  const size = marker.size;
+  const x = marker.x;
+  const y = marker.y;
+  if (marker.isEmoji) {
+    // Text glyph is simpler than foreignObject and works inside clipped SVG groups.
+    return `<text x="${x.toFixed(2)}" y="${(y + size * 0.85).toFixed(2)}" text-anchor="middle"` +
+      ` font-size="${size}" style="user-select:none">${escapeHtml(marker.name)}</text>`;
+  }
+  const key = marker.name.replace(/-outline$/, '');
+  const paths = CHART_ICON_PATHS[marker.name] || CHART_ICON_PATHS[key];
+  if (paths) {
+    const strokeOnly = key === 'trending-up' || key === 'trending-down';
+    return `<svg x="${(x - size / 2).toFixed(2)}" y="${y.toFixed(2)}" width="${size}" height="${size}" viewBox="0 0 512 512" overflow="visible">` +
+      (strokeOnly
+        ? `<g fill="none" stroke="${marker.color}" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">${paths}</g>`
+        : `<g fill="${marker.color}">${paths}</g>`) +
+      `</svg>`;
+  }
+  // Fallback: small filled circle for unknown Ionicons names
+  return `<circle cx="${x.toFixed(2)}" cy="${(y + size / 2).toFixed(2)}" r="${(size / 2.5).toFixed(2)}" fill="${marker.color}"/>`;
+}
+
+/**
+ * Build chart geometry + overlay pixel data.
+ * opts may include: emaValues (aligned to sliced), horizontalLines, iconMarkers.
+ */
+function buildChartGeometry(sliced, width, height, pad, opts) {
   const P = pad || CHART_PAD;
   const chartW = Math.max(1, width - P.left - P.right);
   const chartH = Math.max(1, height - P.top - P.bottom);
+  const emaValues = (opts && opts.emaValues) || [];
+  const horizontalLines = (opts && opts.horizontalLines) || [];
+  const iconMarkers = (opts && opts.iconMarkers) || [];
+
   let minP = Infinity, maxP = -Infinity;
   for (const p of sliced) {
     if (p.c < minP) minP = p.c;
     if (p.c > maxP) maxP = p.c;
   }
+  for (const series of emaValues) {
+    for (const v of series.values) {
+      if (v != null) {
+        if (v < minP) minP = v;
+        if (v > maxP) maxP = v;
+      }
+    }
+  }
+  for (const h of horizontalLines) {
+    if (h.value < minP) minP = h.value;
+    if (h.value > maxP) maxP = h.value;
+  }
+  const overlayRange = maxP - minP || 1;
+  const overlayPad = overlayRange * OVERLAY_PADDING_RATIO;
+  if (iconMarkers.some((m) => m.position === 'bottom') ||
+      horizontalLines.some((l) => l.label && (l.labelV || 'above') === 'below')) {
+    minP -= overlayPad;
+  }
+  if (iconMarkers.some((m) => m.position === 'top') ||
+      horizontalLines.some((l) => l.label && (l.labelV || 'above') === 'above')) {
+    maxP += overlayPad;
+  }
+
   const yPad = (maxP - minP || 1) * PRICE_PADDING_RATIO;
   const paddedMin = minP - yPad;
   const paddedMax = maxP + yPad;
@@ -1302,14 +1687,94 @@ function buildChartGeometry(sliced, width, height, pad) {
     c: p.c,
     t: p.t,
   }));
-  return { pts, chartW, chartH, paddedMin, paddedMax, P, width, height };
+
+  // EMA paths on the same Y scale
+  const emaPaths = [];
+  for (const series of emaValues) {
+    const emaPts = [];
+    for (let i = 0; i < series.values.length; i++) {
+      if (series.values[i] != null) {
+        emaPts.push({
+          x: P.left + (i / (sliced.length - 1)) * chartW,
+          y: P.top + chartH - ((series.values[i] - paddedMin) / range) * chartH,
+        });
+      }
+    }
+    if (emaPts.length >= 2) {
+      emaPaths.push({ color: series.overlay.color, path: monotoneCubicPath(emaPts), overlay: series.overlay });
+    }
+  }
+
+  // Horizontal line segments
+  const hLines = [];
+  if (horizontalLines.length && sliced.length >= 2) {
+    const firstTs = sliced[0].t;
+    const lastTs = sliced[sliced.length - 1].t;
+    const tsSpan = lastTs - firstTs || 1;
+    for (const hline of horizontalLines) {
+      const fromTs = hline.fromDate ? new Date(hline.fromDate + 'T00:00:00Z').getTime() : firstTs;
+      const toTs = hline.toDate ? new Date(hline.toDate + 'T00:00:00Z').getTime() : lastTs;
+      if (fromTs > lastTs) continue;
+      if (hline.toDate && toTs < firstTs) continue;
+      const y = P.top + chartH - ((hline.value - paddedMin) / range) * chartH;
+      const xStart = Math.max(P.left, P.left + ((fromTs - firstTs) / tsSpan) * chartW);
+      const xEnd = hline.toDate
+        ? Math.min(P.left + chartW, P.left + ((toTs - firstTs) / tsSpan) * chartW)
+        : P.left + chartW;
+      const labelV = hline.labelV || 'above';
+      const labelH = hline.labelH || 'right';
+      const labelDist = hline.labelDistance != null ? hline.labelDistance : HLINE_LABEL_DEFAULT_DISTANCE;
+      hLines.push({
+        xStart, xEnd, y,
+        color: hline.color,
+        opacity: hline.opacity,
+        strokeWidth: hline.strokeWidth || HLINE_STROKE_WIDTH,
+        style: hline.style || 'solid',
+        label: hline.label,
+        labelX: labelH === 'left' ? xStart : xEnd,
+        labelY: labelV === 'below' ? y + labelDist + HLINE_LABEL_FONT_SIZE : y - labelDist,
+        labelH, labelV,
+      });
+    }
+  }
+
+  // Icon markers at closest data points
+  const icons = [];
+  if (iconMarkers.length && sliced.length >= 2) {
+    const firstTs = sliced[0].t;
+    const lastTs = sliced[sliced.length - 1].t;
+    for (const marker of iconMarkers) {
+      const markerTs = new Date(marker.date + 'T00:00:00Z').getTime();
+      if (markerTs < firstTs || markerTs > lastTs) continue;
+      let closestIdx = 0;
+      let closestDist = Infinity;
+      for (let i = 0; i < sliced.length; i++) {
+        const dist = Math.abs(sliced[i].t - markerTs);
+        if (dist < closestDist) { closestDist = dist; closestIdx = i; }
+      }
+      const size = marker.isEmoji ? ICON_MARKER_EMOJI_SIZE : ICON_MARKER_IONICON_SIZE;
+      const gap = marker.gap != null ? marker.gap : ICON_MARKER_GAP;
+      const px = pts[closestIdx];
+      icons.push({
+        x: px.x,
+        y: marker.position === 'top' ? px.y - gap - size : px.y + gap,
+        name: marker.name,
+        isEmoji: marker.isEmoji,
+        color: marker.color,
+        size,
+      });
+    }
+  }
+
+  return { pts, chartW, chartH, paddedMin, paddedMax, P, width, height, emaPaths, hLines, icons, emaValues };
 }
 
 /**
  * Paint a price line chart into `host`.
  * Fill uses accent-tinted dots + vertical fade (app LineChart ImageShader dots).
  * opts: { points, days, currentPrice, accent, height, pad, scrub, uid,
- *         playEntrance, withSlide, liveDot }
+ *         playEntrance, withSlide, liveDot,
+ *         emaOverlays, horizontalLines, iconMarkers, ohlcPoints, coinId, legendEl }
  * Returns geometry for scrub hit-testing.
  */
 function paintPriceChart(host, tipEl, opts) {
@@ -1317,16 +1782,61 @@ function paintPriceChart(host, tipEl, opts) {
     points, days, currentPrice, accent, height = CHART_HEIGHT,
     pad = CHART_PAD, scrub = null, uid = 'pc',
     playEntrance = false, withSlide = false, liveDot = true,
+    emaOverlays = null, horizontalLines = null, iconMarkers = null,
+    ohlcPoints = null, coinId = null, legendEl = null,
   } = opts;
   const width = host.clientWidth || host.parentElement?.clientWidth || 360;
+  const hasEma = !!(emaOverlays && emaOverlays.length);
+  // Reserve bottom strip for EMA legend (app EMA_LEGEND_RESERVED_HEIGHT)
+  const basePad = pad || CHART_PAD;
+  const P = hasEma
+    ? { ...basePad, bottom: basePad.bottom + EMA_LEGEND_RESERVED_HEIGHT }
+    : basePad;
+
+  // Slice visible window; keep full series for EMA warm-up when present
   const sliced = sliceChartPoints(points, days, currentPrice);
   if (sliced.length < 2) {
     host.innerHTML = `<div class="pc__fallback">${I18N.t('widget.chartError')}</div>`;
     if (tipEl) tipEl.classList.add('hidden');
+    if (legendEl) legendEl.innerHTML = '';
     return null;
   }
-  const geom = buildChartGeometry(sliced, width, height, pad);
-  const { pts, chartH, P } = geom;
+
+  // EMA: compute on full (or warmup) data, then map to visible slice
+  const emaValues = [];
+  if (hasEma) {
+    const warmup = emaWarmupDaysFor(emaOverlays, coinId);
+    // fullData = points already include warmup when mountInlineChart fetched extra days
+    const full = points;
+    const visibleStart = full.length - sliced.length;
+    // Align ohlc to full close timestamps when available
+    let ohlc = ohlcPoints;
+    if ((!ohlc || !ohlc.length) && coinId && bundledChartCache[coinId]) {
+      ohlc = bundledChartCache[coinId].ohlc || null;
+    }
+    // Restrict ohlc to the same time span as full for field-based EMAs
+    if (ohlc && ohlc.length && full.length) {
+      const t0 = full[0].t;
+      const t1 = full[full.length - 1].t;
+      ohlc = ohlc.filter((c) => c.t >= t0 && c.t <= t1);
+    }
+    for (const overlay of emaOverlays) {
+      const all = computeEmaValues(full, overlay, ohlc, coinId);
+      // Visible portion: last sliced.length entries of full-aligned series.
+      // When full === points and sliced is a time-filter of points, index by timestamp.
+      const byTs = new Map();
+      for (let i = 0; i < full.length; i++) byTs.set(full[i].t, all[i]);
+      const visible = sliced.map((p) => (byTs.has(p.t) ? byTs.get(p.t) : null));
+      // Apply live price only affects last close — EMA stays as computed
+      emaValues.push({ overlay, values: visible });
+    }
+    void visibleStart; // kept for parity with app slice formula
+  }
+
+  const geom = buildChartGeometry(sliced, width, height, P, {
+    emaValues, horizontalLines: horizontalLines || [], iconMarkers: iconMarkers || [],
+  });
+  const { pts, chartH, emaPaths, hLines, icons } = geom;
   const linePath = monotoneCubicPath(pts);
   const last = pts[pts.length - 1];
   const fillPath = linePath +
@@ -1341,6 +1851,40 @@ function paintPriceChart(host, tipEl, opts) {
   const fillClipId = `${uid}-fill-clip`;
   const crossId = `${uid}-cross`;
   const drawClipId = `${uid}-draw`;
+
+  // Horizontal lines SVG
+  let hLinesSvg = '';
+  for (let i = 0; i < hLines.length; i++) {
+    const h = hLines[i];
+    const dash = h.style === 'dashed' ? HLINE_DASH.join(' ')
+      : h.style === 'dotted' ? HLINE_DOT.join(' ') : '';
+    hLinesSvg +=
+      `<line x1="${h.xStart.toFixed(2)}" y1="${h.y.toFixed(2)}" x2="${h.xEnd.toFixed(2)}" y2="${h.y.toFixed(2)}"` +
+      ` stroke="${h.color}" stroke-width="${h.strokeWidth}" stroke-opacity="${h.opacity}"` +
+      (dash ? ` stroke-dasharray="${dash}"` : '') +
+      ` stroke-linecap="round"/>`;
+    if (h.label) {
+      const anchor = h.labelH === 'left' ? 'start' : 'end';
+      hLinesSvg +=
+        `<text x="${h.labelX.toFixed(2)}" y="${h.labelY.toFixed(2)}"` +
+        ` fill="${h.color}" fill-opacity="${Math.min(1, h.opacity + 0.2)}"` +
+        ` font-size="${HLINE_LABEL_FONT_SIZE}" font-family="Inter, system-ui, sans-serif"` +
+        ` text-anchor="${anchor}" dominant-baseline="${h.labelV === 'below' ? 'hanging' : 'auto'}">` +
+        `${escapeHtml(h.label)}</text>`;
+    }
+  }
+
+  // EMA paths SVG
+  let emaSvg = '';
+  for (const e of emaPaths) {
+    emaSvg +=
+      `<path d="${e.path}" fill="none" stroke="${e.color}" stroke-width="${EMA_STROKE_WIDTH}"` +
+      ` stroke-opacity="${EMA_OPACITY}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+
+  // Icon markers
+  let iconsSvg = '';
+  for (const m of icons) iconsSvg += chartIconMarkerSvg(m);
 
   let scrubDefs = '';
   let scrubSvg = '';
@@ -1367,6 +1911,22 @@ function paintPriceChart(host, tipEl, opts) {
     tipEl.style.top = `${Math.max(4, scrub.y - 40)}px`;
   } else if (tipEl) {
     tipEl.classList.add('hidden');
+  }
+
+  // EMA legend (app ChartBlock emaLegend)
+  if (legendEl) {
+    if (hasEma) {
+      legendEl.innerHTML = emaOverlays.map((ema) =>
+        `<span class="nb-chart__legend-item">` +
+          `<span class="nb-chart__legend-line" style="background:${ema.color}"></span>` +
+          `<span class="nb-chart__legend-label">${escapeHtml(emaLegendLabel(ema))}</span>` +
+        `</span>`
+      ).join('');
+      legendEl.hidden = false;
+    } else {
+      legendEl.innerHTML = '';
+      legendEl.hidden = true;
+    }
   }
 
   const stageClass = 'pc__stage' + (playEntrance ? (withSlide ? ' pc__stage--slide' : '') : ' is-in');
@@ -1400,11 +1960,16 @@ function paintPriceChart(host, tipEl, opts) {
           `<g clip-path="url(#${fillClipId})" mask="url(#${fadeMaskId})">` +
             `<rect x="0" y="0" width="${width}" height="${height}" fill="url(#${dotsId})"/>` +
           `</g>` +
+          // Horizontal lines behind price line (app order)
+          hLinesSvg +
+          // EMA overlays behind price line
+          emaSvg +
           `<path d="${linePath}" fill="none" stroke="${accent}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>` +
           (liveDot && currentPrice != null
             ? `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="3.5" fill="${accent}"/>` +
               `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="2" fill="${innerDot}"/>`
             : `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="3" fill="${accent}"/>`) +
+          iconsSvg +
         `</g>` +
         scrubSvg +
       `</svg>` +
@@ -1432,6 +1997,975 @@ function paintPriceChart(host, tipEl, opts) {
 
   return geom;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Chart embed types: candle / rsi / fng / cycle
+// Port of app ChartBlock + CandleChart + RsiChart + FngPriceChart + CycleComparisonChart
+// (loaded as part of app.js — do not include separately)
+// ═══════════════════════════════════════════════════════════════════════
+
+function chartHeightFor(params) {
+  const half = params && params.size === 'half';
+  if (params && params.chartType === 'rsi') return half ? RSI_HEIGHT_HALF : RSI_HEIGHT_FULL;
+  return half ? CHART_HEIGHT_HALF : CHART_HEIGHT_INLINE;
+}
+
+function chartHeightClass(params) {
+  const parts = [];
+  if (params && params.size === 'half') parts.push('nb-chart--half');
+  if (params && params.chartType === 'rsi') parts.push('nb-chart--rsi');
+  return parts.length ? ' ' + parts.join(' ') : '';
+}
+
+// ── Candle grouping (app chartDataService) ────────────────────────────
+
+function getAutoCandleGrouping(totalDays) {
+  if (totalDays <= 31) return { type: 'days', value: 1 };
+  if (totalDays <= 90) return { type: 'weekly' };
+  return { type: 'monthly' };
+}
+
+function parseCandleInterval(interval) {
+  if (!interval) return undefined;
+  if (interval === '1W') return { type: 'weekly' };
+  if (interval === '1M') return { type: 'monthly' };
+  if (interval === '3M') return { type: 'quarterly' };
+  const dayMatch = String(interval).match(/^(\d+)d$/i);
+  if (dayMatch) return { type: 'days', value: parseInt(dayMatch[1], 10) };
+  // Sub-daily handled separately via worker
+  return undefined;
+}
+
+function getWeekStartUTC(timestamp) {
+  const date = new Date(timestamp);
+  const day = date.getUTCDay();
+  const diff = day === 0 ? 6 : day - 1;
+  date.setUTCDate(date.getUTCDate() - diff);
+  date.setUTCHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function getMonthKeyUTC(timestamp) {
+  const date = new Date(timestamp);
+  return `${date.getUTCFullYear()}-${date.getUTCMonth()}`;
+}
+
+function getQuarterKeyUTC(timestamp) {
+  const date = new Date(timestamp);
+  const quarter = Math.floor(date.getUTCMonth() / 3);
+  return `${date.getUTCFullYear()}-Q${quarter}`;
+}
+
+function mergeOhlcGroup(group) {
+  return {
+    t: group[0].t,
+    o: group[0].o,
+    h: Math.max(...group.map((c) => c.h)),
+    l: Math.min(...group.map((c) => c.l)),
+    c: group[group.length - 1].c,
+  };
+}
+
+function groupOhlcBy(candles, keyFn) {
+  if (!candles.length) return [];
+  const sorted = candles.slice().sort((a, b) => a.t - b.t);
+  const out = [];
+  let curKey = keyFn(sorted[0].t);
+  let group = [];
+  for (const c of sorted) {
+    const k = keyFn(c.t);
+    if (k !== curKey && group.length) {
+      out.push(mergeOhlcGroup(group));
+      group = [];
+      curKey = k;
+    }
+    group.push(c);
+  }
+  if (group.length) out.push(mergeOhlcGroup(group));
+  return out;
+}
+
+function groupOhlcByDays(candles, n) {
+  if (!candles.length || n <= 1) return candles.slice().sort((a, b) => a.t - b.t);
+  const sorted = candles.slice().sort((a, b) => a.t - b.t);
+  const out = [];
+  for (let i = 0; i < sorted.length; i += n) {
+    out.push(mergeOhlcGroup(sorted.slice(i, i + n)));
+  }
+  return out;
+}
+
+function applyCandleGrouping(ohlc, interval, days) {
+  const grouping = parseCandleInterval(interval) || getAutoCandleGrouping(days);
+  if (grouping.type === 'days') return groupOhlcByDays(ohlc, grouping.value || 1);
+  if (grouping.type === 'weekly') return groupOhlcBy(ohlc, getWeekStartUTC);
+  if (grouping.type === 'monthly') return groupOhlcBy(ohlc, getMonthKeyUTC);
+  if (grouping.type === 'quarterly') return groupOhlcBy(ohlc, getQuarterKeyUTC);
+  return ohlc;
+}
+
+function sliceOhlc(ohlc, days, endDate) {
+  if (!ohlc || !ohlc.length) return [];
+  const endMs = endDate
+    ? new Date(endDate + 'T00:00:00Z').getTime() + ONE_DAY_MS - 1
+    : ohlc[ohlc.length - 1].t;
+  const startMs = endMs - days * ONE_DAY_MS;
+  return ohlc.filter((c) => c.t >= startMs && c.t <= endMs);
+}
+
+/** Load bundled OHLC for a coin (requires loadBundledChart first). */
+async function getBundledOhlc(coinId) {
+  const bundled = await loadBundledChart(coinId);
+  return (bundled && bundled.ohlc) || [];
+}
+
+/** Worker GET /candles — sub-daily or non-bundled symbols. */
+async function fetchExchangeCandles(symbol, interval, fromMs, toMs) {
+  const url = `${CONFIG.workerBase}/candles` +
+    `?symbol=${encodeURIComponent(symbol)}` +
+    `&interval=${encodeURIComponent(interval)}` +
+    `&from=${fromMs}&to=${toMs}`;
+  const res = await fetch(url);
+  if (res.status === 404) throw new Error('symbol_not_found');
+  if (!res.ok) throw new Error(`candles ${res.status}`);
+  const json = await res.json();
+  // Candle: [t, o, h, l, c, v]
+  return (json.candles || []).map((row) => ({
+    t: row[0], o: row[1], h: row[2], l: row[3], c: row[4],
+  })).filter((c) => isFinite(c.t) && isFinite(c.c));
+}
+
+async function loadCandleSeries(params, coinId, days) {
+  const endDate = params.date !== 'now' ? params.date : null;
+  const interval = (params.candleInterval || '').toLowerCase();
+  const isSubDaily = SUB_DAILY_INTERVALS.has(interval);
+  const hasBundle = coinId && !!(await loadBundledChart(coinId)).points?.length;
+  const useWorker = isSubDaily || !hasBundle;
+
+  if (useWorker) {
+    const endMs = endDate
+      ? new Date(endDate + 'T23:59:59Z').getTime()
+      : Date.now();
+    const startMs = params.fromDate
+      ? new Date(params.fromDate + 'T00:00:00Z').getTime()
+      : endMs - days * ONE_DAY_MS;
+    const workerInterval = isSubDaily ? interval : '1d';
+    return fetchExchangeCandles(params.asset, workerInterval, startMs, endMs + 1);
+  }
+
+  let ohlc = await getBundledOhlc(coinId);
+  // Extend with delta closes as synthetic OHLC if needed
+  if (!ohlc.length) {
+    const pts = await fetchCoinChart(coinId, Math.max(days, 30), endDate);
+    ohlc = pts.map((p) => ({ t: p.t, o: p.c, h: p.c, l: p.c, c: p.c }));
+  } else {
+    ohlc = sliceOhlc(ohlc, Math.max(days, 30), endDate);
+  }
+  return applyCandleGrouping(ohlc, params.candleInterval, days);
+}
+
+// ── RSI (app rsi.ts Wilder) ───────────────────────────────────────────
+
+function calculateRSI(data, period) {
+  // data: {t,c}[]
+  if (!data || data.length < period + 1) return [];
+  const changes = [];
+  for (let i = 1; i < data.length; i++) changes.push(data[i].c - data[i - 1].c);
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 0; i < period; i++) {
+    if (changes[i] > 0) avgGain += changes[i];
+    else avgLoss += Math.abs(changes[i]);
+  }
+  avgGain /= period;
+  avgLoss /= period;
+  const result = [];
+  const rs0 = avgLoss === 0 ? Infinity : avgGain / avgLoss;
+  result.push({
+    t: data[period].t,
+    v: avgLoss === 0 ? 100 : 100 - (100 / (1 + rs0)),
+  });
+  for (let i = period; i < changes.length; i++) {
+    const gain = changes[i] > 0 ? changes[i] : 0;
+    const loss = changes[i] < 0 ? Math.abs(changes[i]) : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    const rs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
+    const rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + rs));
+    result.push({ t: data[i + 1].t, v: rsi });
+  }
+  return result;
+}
+
+function calculateWeeklyRSI(data, period) {
+  if (!data || data.length < 7) return [];
+  const weekly = [];
+  for (let i = 6; i < data.length; i += 7) weekly.push(data[i]);
+  const lastIdx = data.length - 1;
+  if (weekly.length) {
+    const lastW = data.indexOf(weekly[weekly.length - 1]);
+    if (lastW !== lastIdx && lastIdx - lastW >= 4) weekly.push(data[lastIdx]);
+  }
+  const weeklyRsi = calculateRSI(weekly, period);
+  if (!weeklyRsi.length) return [];
+  // Interpolate weekly RSI onto daily timestamps in range
+  const result = [];
+  for (let i = 0; i < weeklyRsi.length; i++) {
+    const cur = weeklyRsi[i];
+    const next = weeklyRsi[i + 1] || null;
+    // find first data idx >= cur.t
+    let from = 0;
+    for (let j = 0; j < data.length; j++) {
+      if (data[j].t >= cur.t) { from = j; break; }
+    }
+    if (!next) {
+      for (let j = from; j < data.length; j++) result.push({ t: data[j].t, v: cur.v });
+    } else {
+      let end = from;
+      for (let j = from; j < data.length; j++) {
+        if (data[j].t < next.t) end = j;
+        else break;
+      }
+      const totalMs = next.t - cur.t || 1;
+      for (let j = from; j <= end; j++) {
+        const t = (data[j].t - cur.t) / totalMs;
+        result.push({ t: data[j].t, v: cur.v + t * (next.v - cur.v) });
+      }
+    }
+  }
+  return result;
+}
+
+// ── F&G history ───────────────────────────────────────────────────────
+
+let fngHistoryCache = null; // { points, fetchedAt }
+
+function fngClassFromValue(value) {
+  if (value <= 25) return 'extremeFear';
+  if (value <= 45) return 'fear';
+  if (value <= 55) return 'neutral';
+  if (value <= 75) return 'greed';
+  return 'extremeGreed';
+}
+
+async function loadFngHistory() {
+  if (fngHistoryCache && Date.now() - fngHistoryCache.fetchedAt < 4 * 60 * 60 * 1000) {
+    return fngHistoryCache.points;
+  }
+  let points = [];
+  try {
+    const res = await fetch('./data/fng-history.json');
+    if (res.ok) {
+      const col = await res.json();
+      const ts = col.timestamps || [];
+      const vs = col.values || [];
+      for (let i = 0; i < ts.length; i++) {
+        if (!isFinite(ts[i]) || !isFinite(vs[i])) continue;
+        points.push({ t: ts[i], v: vs[i], classification: fngClassFromValue(vs[i]) });
+      }
+    }
+  } catch (e) { /* empty */ }
+
+  // Gap-fill via alternative.me (may fail CORS — ignore)
+  try {
+    const last = points.length ? points[points.length - 1].t : 0;
+    const daysBehind = Math.ceil((Date.now() - last) / ONE_DAY_MS);
+    if (daysBehind > 1) {
+      const res = await fetch(`https://api.alternative.me/fng/?limit=${Math.min(daysBehind + 5, 30)}`);
+      if (res.ok) {
+        const json = await res.json();
+        const byDay = new Map(points.map((p) => [p.t, p]));
+        for (const entry of json.data || []) {
+          const t = Math.floor(parseInt(entry.timestamp, 10) * 1000 / ONE_DAY_MS) * ONE_DAY_MS;
+          const v = parseInt(entry.value, 10);
+          if (!isFinite(t) || !isFinite(v)) continue;
+          byDay.set(t, { t, v, classification: fngClassFromValue(v) });
+        }
+        points = Array.from(byDay.values()).sort((a, b) => a.t - b.t);
+      }
+    }
+  } catch (e) { /* CORS / network — keep bundle */ }
+
+  fngHistoryCache = { points, fetchedAt: Date.now() };
+  return points;
+}
+
+function getFngForTimestamp(history, ts) {
+  if (!history || !history.length) return null;
+  const dayTs = Math.floor(ts / ONE_DAY_MS) * ONE_DAY_MS;
+  let lo = 0, hi = history.length - 1;
+  if (dayTs < history[0].t || dayTs > history[hi].t) return null;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    if (history[mid].t === dayTs) return history[mid];
+    if (history[mid].t < dayTs) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return hi >= 0 ? history[hi] : null;
+}
+
+// ── Shared overlay SVG helpers (hline + icons on arbitrary Y scale) ────
+
+function renderHLinesSvg(hLines) {
+  let svg = '';
+  for (const h of hLines) {
+    const dash = h.style === 'dashed' ? HLINE_DASH.join(' ')
+      : h.style === 'dotted' ? HLINE_DOT.join(' ') : '';
+    svg +=
+      `<line x1="${h.xStart.toFixed(2)}" y1="${h.y.toFixed(2)}" x2="${h.xEnd.toFixed(2)}" y2="${h.y.toFixed(2)}"` +
+      ` stroke="${h.color}" stroke-width="${h.strokeWidth}" stroke-opacity="${h.opacity}"` +
+      (dash ? ` stroke-dasharray="${dash}"` : '') +
+      ` stroke-linecap="round"/>`;
+    if (h.label) {
+      const anchor = h.labelH === 'left' ? 'start' : 'end';
+      svg +=
+        `<text x="${h.labelX.toFixed(2)}" y="${h.labelY.toFixed(2)}"` +
+        ` fill="${h.color}" fill-opacity="${Math.min(1, h.opacity + 0.2)}"` +
+        ` font-size="${HLINE_LABEL_FONT_SIZE}" font-family="Inter, system-ui, sans-serif"` +
+        ` text-anchor="${anchor}" dominant-baseline="${h.labelV === 'below' ? 'hanging' : 'auto'}">` +
+        `${escapeHtml(h.label)}</text>`;
+    }
+  }
+  return svg;
+}
+
+function buildHLineSegments(horizontalLines, chartDataTs, priceToY, P, chartW) {
+  const hLines = [];
+  if (!horizontalLines || !horizontalLines.length || chartDataTs.length < 2) return hLines;
+  const firstTs = chartDataTs[0];
+  const lastTs = chartDataTs[chartDataTs.length - 1];
+  const tsSpan = lastTs - firstTs || 1;
+  for (const hline of horizontalLines) {
+    const fromTs = hline.fromDate ? new Date(hline.fromDate + 'T00:00:00Z').getTime() : firstTs;
+    const toTs = hline.toDate ? new Date(hline.toDate + 'T00:00:00Z').getTime() : lastTs;
+    if (fromTs > lastTs) continue;
+    if (hline.toDate && toTs < firstTs) continue;
+    const y = priceToY(hline.value);
+    const xStart = Math.max(P.left, P.left + ((fromTs - firstTs) / tsSpan) * chartW);
+    const xEnd = hline.toDate
+      ? Math.min(P.left + chartW, P.left + ((toTs - firstTs) / tsSpan) * chartW)
+      : P.left + chartW;
+    const labelV = hline.labelV || 'above';
+    const labelH = hline.labelH || 'right';
+    const labelDist = hline.labelDistance != null ? hline.labelDistance : HLINE_LABEL_DEFAULT_DISTANCE;
+    hLines.push({
+      xStart, xEnd, y,
+      color: hline.color, opacity: hline.opacity,
+      strokeWidth: hline.strokeWidth || HLINE_STROKE_WIDTH,
+      style: hline.style || 'solid',
+      label: hline.label,
+      labelX: labelH === 'left' ? xStart : xEnd,
+      labelY: labelV === 'below' ? y + labelDist + HLINE_LABEL_FONT_SIZE : y - labelDist,
+      labelH, labelV,
+    });
+  }
+  return hLines;
+}
+
+function buildIconMarkers(iconMarkers, chartData, priceAt, P, chartW) {
+  // chartData: [{t, ...}], priceAt(i) → y price for marker anchor
+  const icons = [];
+  if (!iconMarkers || !iconMarkers.length || chartData.length < 2) return icons;
+  const firstTs = chartData[0].t;
+  const lastTs = chartData[chartData.length - 1].t;
+  for (const marker of iconMarkers) {
+    const markerTs = new Date(marker.date + 'T00:00:00Z').getTime();
+    if (markerTs < firstTs || markerTs > lastTs) continue;
+    let closestIdx = 0, closestDist = Infinity;
+    for (let i = 0; i < chartData.length; i++) {
+      const d = Math.abs(chartData[i].t - markerTs);
+      if (d < closestDist) { closestDist = d; closestIdx = i; }
+    }
+    const size = marker.isEmoji ? ICON_MARKER_EMOJI_SIZE : ICON_MARKER_IONICON_SIZE;
+    const gap = marker.gap != null ? marker.gap : ICON_MARKER_GAP;
+    const x = P.left + (closestIdx / (chartData.length - 1)) * chartW;
+    const py = priceAt(closestIdx);
+    icons.push({
+      x, y: marker.position === 'top' ? py - gap - size : py + gap,
+      name: marker.name, isEmoji: marker.isEmoji, color: marker.color, size,
+    });
+  }
+  return icons;
+}
+
+function paintStageShell(host, width, height, uid, playEntrance, withSlide, innerSvg, scrubSvg, scrubDefs) {
+  const stageClass = 'pc__stage' + (playEntrance ? (withSlide ? ' pc__stage--slide' : '') : ' is-in');
+  const clipW = playEntrance ? 0 : width;
+  const drawClipId = `${uid}-draw`;
+  host.innerHTML =
+    `<div class="${stageClass}" data-pc-stage>` +
+      `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" preserveAspectRatio="none">` +
+        `<defs>` +
+          (scrubDefs || '') +
+          `<clipPath id="${drawClipId}"><rect data-pc-clip x="0" y="0" width="${clipW}" height="${height}"/></clipPath>` +
+        `</defs>` +
+        `<g clip-path="url(#${drawClipId})">${innerSvg}</g>` +
+        (scrubSvg || '') +
+      `</svg>` +
+    `</div>`;
+  if (playEntrance) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const stage = host.querySelector('[data-pc-stage]');
+        const clip = host.querySelector('[data-pc-clip]');
+        if (stage) stage.classList.add('is-in');
+        if (clip) {
+          animateValue(0, width, CHART_DRAW_MS, (w) => {
+            clip.setAttribute('width', String(Math.max(0, w)));
+          }, () => clip.setAttribute('width', String(width)));
+        }
+      });
+    });
+  }
+}
+
+function placeTooltip(tipEl, scrub, width, accent, P, chartH, dark) {
+  if (!tipEl || !scrub) {
+    if (tipEl) tipEl.classList.add('hidden');
+    return { scrubDefs: '', scrubSvg: '' };
+  }
+  const crosshair = dark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)';
+  const innerDot = dark ? '#000000' : '#FFFFFF';
+  const crossId = 'nb-cross-' + Math.random().toString(36).slice(2, 7);
+  const scrubDefs =
+    `<linearGradient id="${crossId}" x1="0" y1="${P.top}" x2="0" y2="${P.top + chartH}" gradientUnits="userSpaceOnUse">` +
+      `<stop offset="0%" stop-color="${crosshair}" stop-opacity="0"/>` +
+      `<stop offset="12%" stop-color="${crosshair}" stop-opacity="1"/>` +
+      `<stop offset="88%" stop-color="${crosshair}" stop-opacity="1"/>` +
+      `<stop offset="100%" stop-color="${crosshair}" stop-opacity="0"/>` +
+    `</linearGradient>`;
+  const scrubSvg =
+    `<rect x="${(scrub.x - 0.5).toFixed(2)}" y="${P.top}" width="1" height="${chartH}" fill="url(#${crossId})"/>` +
+    `<circle cx="${scrub.x.toFixed(2)}" cy="${scrub.y.toFixed(2)}" r="5" fill="${accent}"/>` +
+    `<circle cx="${scrub.x.toFixed(2)}" cy="${scrub.y.toFixed(2)}" r="2" fill="${innerDot}"/>`;
+  tipEl.innerHTML = scrub.html ||
+    (`<div class="mm__tooltip-price">${formatTooltipPrice(scrub.price)}</div>` +
+     `<div class="mm__tooltip-date">${formatTooltipDate(scrub.t)}</div>`);
+  tipEl.classList.remove('hidden');
+  const tipW = tipEl.offsetWidth || 100;
+  let left = scrub.x + 8;
+  if (left + tipW > width - 8) left = scrub.x - tipW - 8;
+  tipEl.style.left = `${Math.max(8, left)}px`;
+  tipEl.style.top = `${Math.max(4, scrub.y - 40)}px`;
+  return { scrubDefs, scrubSvg };
+}
+
+// ── Candle paint ──────────────────────────────────────────────────────
+
+function paintCandleChart(host, tipEl, opts) {
+  const {
+    candles, accent, height, pad = CHART_PAD_INLINE, scrub = null, uid = 'cd',
+    playEntrance = false, emaOverlays = null, horizontalLines = null,
+    iconMarkers = null, ohlcPoints = null, coinId = null, legendEl = null,
+    closeSeries = null, // {t,c}[] for EMA warmup (daily closes)
+  } = opts;
+  const width = host.clientWidth || host.parentElement?.clientWidth || 360;
+  if (!candles || candles.length < 2) {
+    host.innerHTML = `<div class="pc__fallback">${I18N.t('widget.chartError')}</div>`;
+    if (tipEl) tipEl.classList.add('hidden');
+    return null;
+  }
+  const hasEma = !!(emaOverlays && emaOverlays.length);
+  const P = hasEma
+    ? { ...pad, bottom: pad.bottom + EMA_LEGEND_RESERVED_HEIGHT }
+    : pad;
+  const chartW = Math.max(1, width - P.left - P.right);
+  const chartH = Math.max(1, height - P.top - P.bottom);
+
+  let minP = Infinity, maxP = -Infinity;
+  for (const c of candles) {
+    if (c.l < minP) minP = c.l;
+    if (c.h > maxP) maxP = c.h;
+  }
+
+  // EMA on close series (prefer daily closes for accuracy)
+  const emaPaths = [];
+  const emaValuesForLegend = emaOverlays || [];
+  if (hasEma) {
+    const full = closeSeries && closeSeries.length
+      ? closeSeries
+      : candles.map((c) => ({ t: c.t, c: c.c }));
+    let ohlc = ohlcPoints;
+    if ((!ohlc || !ohlc.length) && coinId && bundledChartCache[coinId]) {
+      ohlc = bundledChartCache[coinId].ohlc;
+    }
+    for (const overlay of emaOverlays) {
+      const all = computeEmaValues(full, overlay, ohlc, coinId);
+      const byTs = new Map();
+      for (let i = 0; i < full.length; i++) byTs.set(full[i].t, all[i]);
+      const pts = [];
+      for (let i = 0; i < candles.length; i++) {
+        const v = byTs.get(candles[i].t);
+        if (v != null) {
+          if (v < minP) minP = v;
+          if (v > maxP) maxP = v;
+          pts.push({ i, v });
+        }
+      }
+      // store for path after Y scale known
+      emaPaths.push({ overlay, pts });
+    }
+  }
+  if (horizontalLines) {
+    for (const h of horizontalLines) {
+      if (h.value < minP) minP = h.value;
+      if (h.value > maxP) maxP = h.value;
+    }
+  }
+  const yPad = (maxP - minP || 1) * PRICE_PADDING_RATIO;
+  const paddedMin = minP - yPad;
+  const paddedMax = maxP + yPad;
+  const range = paddedMax - paddedMin || 1;
+  const priceToY = (price) => P.top + chartH - ((price - paddedMin) / range) * chartH;
+
+  const n = candles.length;
+  const span = n > 1 ? chartW / (n - 1) : chartW;
+  const rawW = span / (1 + CANDLE_GAP_RATIO);
+  const candleWidth = Math.max(CANDLE_MIN_WIDTH, Math.min(CANDLE_MAX_WIDTH, rawW));
+
+  const metrics = candles.map((c, i) => {
+    const x = P.left + (n > 1 ? (i / (n - 1)) * chartW : chartW / 2);
+    const openY = priceToY(c.o);
+    const closeY = priceToY(c.c);
+    let bodyTop = Math.min(openY, closeY);
+    let bodyBottom = Math.max(openY, closeY);
+    if (bodyBottom - bodyTop < MIN_BODY_HEIGHT) {
+      const mid = (bodyTop + bodyBottom) / 2;
+      bodyTop = mid - MIN_BODY_HEIGHT / 2;
+      bodyBottom = mid + MIN_BODY_HEIGHT / 2;
+    }
+    return {
+      x, bodyTop, bodyBottom,
+      wickTop: priceToY(c.h), wickBottom: priceToY(c.l),
+      closeY, isBullish: c.c >= c.o, c: c.c, t: c.t, o: c.o, h: c.h, l: c.l,
+    };
+  });
+
+  let candlesSvg = '';
+  for (const m of metrics) {
+    const color = m.isBullish ? BULLISH_COLOR : BEARISH_COLOR;
+    candlesSvg +=
+      `<line x1="${m.x.toFixed(2)}" y1="${m.wickTop.toFixed(2)}" x2="${m.x.toFixed(2)}" y2="${m.wickBottom.toFixed(2)}"` +
+      ` stroke="${color}" stroke-width="${WICK_WIDTH}" stroke-linecap="round"/>` +
+      `<rect x="${(m.x - candleWidth / 2).toFixed(2)}" y="${m.bodyTop.toFixed(2)}"` +
+      ` width="${candleWidth.toFixed(2)}" height="${Math.max(MIN_BODY_HEIGHT, m.bodyBottom - m.bodyTop).toFixed(2)}"` +
+      ` rx="0.5" fill="${color}"/>`;
+  }
+
+  // EMA paths
+  let emaSvg = '';
+  for (const series of emaPaths) {
+    if (series.pts.length < 2) continue;
+    const pathPts = series.pts.map((p) => ({
+      x: metrics[p.i].x,
+      y: priceToY(p.v),
+    }));
+    emaSvg +=
+      `<path d="${monotoneCubicPath(pathPts)}" fill="none" stroke="${series.overlay.color}"` +
+      ` stroke-width="${EMA_STROKE_WIDTH}" stroke-opacity="${EMA_OPACITY}"` +
+      ` stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+
+  const hLines = buildHLineSegments(
+    horizontalLines, candles.map((c) => c.t), priceToY, P, chartW,
+  );
+  const icons = buildIconMarkers(
+    iconMarkers, candles,
+    (i) => metrics[i].closeY, P, chartW,
+  );
+  let iconsSvg = '';
+  for (const ic of icons) iconsSvg += chartIconMarkerSvg(ic);
+
+  if (legendEl) {
+    if (hasEma) {
+      legendEl.innerHTML = emaValuesForLegend.map((ema) =>
+        `<span class="nb-chart__legend-item">` +
+          `<span class="nb-chart__legend-line" style="background:${ema.color}"></span>` +
+          `<span class="nb-chart__legend-label">${escapeHtml(emaLegendLabel(ema))}</span>` +
+        `</span>`
+      ).join('');
+      legendEl.hidden = false;
+    } else {
+      legendEl.innerHTML = '';
+      legendEl.hidden = true;
+    }
+  }
+
+  const dark = isDark();
+  const tip = placeTooltip(tipEl, scrub, width, scrub && scrub.color ? scrub.color : accent, P, chartH, dark);
+  const inner = renderHLinesSvg(hLines) + emaSvg + candlesSvg + iconsSvg;
+  paintStageShell(host, width, height, uid, playEntrance, false, inner, tip.scrubSvg, tip.scrubDefs);
+
+  // Geometry for scrub: use close points
+  return {
+    pts: metrics.map((m) => ({ x: m.x, y: m.closeY, c: m.c, t: m.t, o: m.o, h: m.h, l: m.l, isBullish: m.isBullish })),
+    chartW, chartH, P, width, height, kind: 'candle',
+  };
+}
+
+// ── RSI paint ─────────────────────────────────────────────────────────
+
+function paintRsiChart(host, tipEl, opts) {
+  const {
+    rsiPoints, // {t,v}[]
+    height, pad = RSI_PAD_INLINE, scrub = null, uid = 'rsi',
+    playEntrance = false, horizontalLines = null, iconMarkers = null,
+  } = opts;
+  const width = host.clientWidth || host.parentElement?.clientWidth || 360;
+  if (!rsiPoints || rsiPoints.length < 2) {
+    host.innerHTML = `<div class="pc__fallback">${I18N.t('widget.chartError')}</div>`;
+    if (tipEl) tipEl.classList.add('hidden');
+    return null;
+  }
+  const P = pad;
+  const chartW = Math.max(1, width - P.left - P.right);
+  const chartH = Math.max(1, height - P.top - P.bottom);
+  const rsiToY = (v) => P.top + chartH - (Math.max(0, Math.min(100, v)) / 100) * chartH;
+  const pts = rsiPoints.map((p, i) => ({
+    x: P.left + (i / (rsiPoints.length - 1)) * chartW,
+    y: rsiToY(p.v),
+    c: p.v, // reuse .c for scrub price field
+    t: p.t,
+  }));
+  const linePath = monotoneCubicPath(pts);
+  const last = pts[pts.length - 1];
+  const accent = '#F15B24';
+
+  // Zones
+  const obY = rsiToY(RSI_OVERBOUGHT);
+  const osY = rsiToY(RSI_OVERSOLD);
+  const midY = rsiToY(RSI_MID);
+  const zones =
+    `<rect x="${P.left}" y="${P.top}" width="${chartW}" height="${(obY - P.top).toFixed(2)}"` +
+    ` fill="${RSI_ZONE_OVERBOUGHT}" fill-opacity="0.08"/>` +
+    `<rect x="${P.left}" y="${osY.toFixed(2)}" width="${chartW}" height="${(P.top + chartH - osY).toFixed(2)}"` +
+    ` fill="${RSI_ZONE_OVERSOLD}" fill-opacity="0.08"/>` +
+    `<line x1="${P.left}" y1="${obY.toFixed(2)}" x2="${P.left + chartW}" y2="${obY.toFixed(2)}"` +
+    ` stroke="${RSI_ZONE_OVERBOUGHT}" stroke-opacity="0.35" stroke-dasharray="4 4"/>` +
+    `<line x1="${P.left}" y1="${osY.toFixed(2)}" x2="${P.left + chartW}" y2="${osY.toFixed(2)}"` +
+    ` stroke="${RSI_ZONE_OVERSOLD}" stroke-opacity="0.35" stroke-dasharray="4 4"/>` +
+    `<line x1="${P.left}" y1="${midY.toFixed(2)}" x2="${P.left + chartW}" y2="${midY.toFixed(2)}"` +
+    ` stroke="currentColor" stroke-opacity="0.15" stroke-dasharray="4 4"/>`;
+
+  const hLines = buildHLineSegments(
+    horizontalLines, rsiPoints.map((p) => p.t), rsiToY, P, chartW,
+  );
+  const icons = buildIconMarkers(
+    iconMarkers, rsiPoints.map((p) => ({ t: p.t })),
+    (i) => pts[i].y, P, chartW,
+  );
+  let iconsSvg = '';
+  for (const ic of icons) iconsSvg += chartIconMarkerSvg(ic);
+
+  const dark = isDark();
+  const tip = placeTooltip(
+    tipEl,
+    scrub ? { ...scrub, html:
+      `<div class="mm__tooltip-price">RSI ${scrub.price.toFixed(1)}</div>` +
+      `<div class="mm__tooltip-date">${formatTooltipDate(scrub.t)}</div>` } : null,
+    width, accent, P, chartH, dark,
+  );
+
+  const inner = zones + renderHLinesSvg(hLines) +
+    `<path d="${linePath}" fill="none" stroke="${accent}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>` +
+    `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="3" fill="${accent}"/>` +
+    iconsSvg;
+  paintStageShell(host, width, height, uid, playEntrance, false, inner, tip.scrubSvg, tip.scrubDefs);
+  return { pts, chartW, chartH, P, width, height, kind: 'rsi' };
+}
+
+// ── F&G price paint (colored segments by F&G level) ───────────────────
+
+function paintFngChart(host, tipEl, opts) {
+  const {
+    points, // {t,c}[]
+    days, currentPrice, height, pad = CHART_PAD_INLINE,
+    scrub = null, uid = 'fng', playEntrance = false,
+    fngHistory = [], fngLevels = DEFAULT_FNG_LEVELS,
+  } = opts;
+  const width = host.clientWidth || host.parentElement?.clientWidth || 360;
+  const sliced = sliceChartPoints(points, days, currentPrice);
+  if (sliced.length < 2) {
+    host.innerHTML = `<div class="pc__fallback">${I18N.t('widget.chartError')}</div>`;
+    if (tipEl) tipEl.classList.add('hidden');
+    return null;
+  }
+  const P = pad;
+  const chartW = Math.max(1, width - P.left - P.right);
+  const chartH = Math.max(1, height - P.top - P.bottom);
+  let minP = Infinity, maxP = -Infinity;
+  for (const p of sliced) {
+    if (p.c < minP) minP = p.c;
+    if (p.c > maxP) maxP = p.c;
+  }
+  const yPad = (maxP - minP || 1) * PRICE_PADDING_RATIO;
+  const paddedMin = minP - yPad;
+  const paddedMax = maxP + yPad;
+  const range = paddedMax - paddedMin || 1;
+  const pts = sliced.map((p, i) => ({
+    x: P.left + (i / (sliced.length - 1)) * chartW,
+    y: P.top + chartH - ((p.c - paddedMin) / range) * chartH,
+    c: p.c, t: p.t,
+  }));
+
+  // Build colored segments
+  const colorAt = (i) => {
+    const entry = getFngForTimestamp(fngHistory, sliced[i].t);
+    if (!entry) return FNG_MUTED_COLOR;
+    const key = FNG_CLASS_TO_KEY[entry.classification];
+    return fngLevels[key] ? FNG_LEVEL_COLORS[entry.classification] : FNG_MUTED_COLOR;
+  };
+  const segments = [];
+  let curColor = colorAt(0);
+  let curPts = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const col = colorAt(i);
+    if (col !== curColor) {
+      curPts.push(pts[i]); // seamless join
+      if (curPts.length >= 2) segments.push({ color: curColor, pts: curPts });
+      curPts = [pts[i]];
+      curColor = col;
+    } else {
+      curPts.push(pts[i]);
+    }
+  }
+  if (curPts.length >= 2) segments.push({ color: curColor, pts: curPts });
+
+  let segSvg = '';
+  for (const s of segments) {
+    segSvg +=
+      `<path d="${monotoneCubicPath(s.pts)}" fill="none" stroke="${s.color}"` +
+      ` stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+  const last = pts[pts.length - 1];
+  const lastColor = colorAt(pts.length - 1);
+  const dark = isDark();
+  let tipHtml = null;
+  if (scrub) {
+    const entry = getFngForTimestamp(fngHistory, scrub.t);
+    const fngLabel = entry
+      ? ({ extremeFear: 'Extreme Fear', fear: 'Fear', neutral: 'Neutral', greed: 'Greed', extremeGreed: 'Extreme Greed' }[entry.classification] || '')
+      : '';
+    tipHtml =
+      `<div class="mm__tooltip-price">${formatTooltipPrice(scrub.price)}</div>` +
+      (entry
+        ? `<div class="mm__tooltip-date" style="color:${FNG_LEVEL_COLORS[entry.classification]}">F&G ${entry.v} · ${fngLabel}</div>`
+        : '') +
+      `<div class="mm__tooltip-date">${formatTooltipDate(scrub.t)}</div>`;
+  }
+  const tip = placeTooltip(
+    tipEl,
+    scrub ? { ...scrub, html: tipHtml } : null,
+    width, lastColor, P, chartH, dark,
+  );
+  const inner = segSvg +
+    `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="3.5" fill="${lastColor}"/>` +
+    `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="2" fill="${dark ? '#000' : '#fff'}"/>`;
+  paintStageShell(host, width, height, uid, playEntrance, false, inner, tip.scrubSvg, tip.scrubDefs);
+  return { pts, chartW, chartH, P, width, height, kind: 'fng' };
+}
+
+// ── Cycle comparison paint ────────────────────────────────────────────
+
+function buildCycleLinesFromRanges(priceData, cycleRanges) {
+  // priceData: {t,c}[]
+  if (!priceData || !priceData.length || !cycleRanges || !cycleRanges.length) return [];
+  return cycleRanges.map((range) => {
+    const startTs = new Date(range.startDate + 'T00:00:00Z').getTime();
+    const endTs = range.endDate
+      ? new Date(range.endDate + 'T00:00:00Z').getTime()
+      : Date.now();
+    const rangePoints = priceData.filter((p) => p.t >= startTs && p.t <= endTs);
+    if (!rangePoints.length) return null;
+    const startPrice = rangePoints[0].c;
+    if (!startPrice) return null;
+    return {
+      label: range.startDate,
+      color: range.color,
+      opacity: range.opacity,
+      strokeWidth: range.strokeWidth || 2,
+      points: rangePoints.map((p, i) => ({
+        day: i,
+        percent: ((p.c - startPrice) / startPrice) * 100,
+      })),
+    };
+  }).filter(Boolean);
+}
+
+function paintCycleChart(host, tipEl, opts) {
+  const {
+    cycleLines, height, pad = CHART_PAD_INLINE,
+    scrub = null, uid = 'cy', playEntrance = false, legendEl = null,
+  } = opts;
+  const width = host.clientWidth || host.parentElement?.clientWidth || 360;
+  if (!cycleLines || !cycleLines.length) {
+    host.innerHTML = `<div class="pc__fallback">${I18N.t('widget.chartError')}</div>`;
+    if (tipEl) tipEl.classList.add('hidden');
+    return null;
+  }
+  const LEGEND_H = 24;
+  const Y_AXIS_W = 40;
+  const P = { ...pad, bottom: pad.bottom + LEGEND_H, right: pad.right + Y_AXIS_W };
+  const chartW = Math.max(1, width - P.left - P.right);
+  const chartH = Math.max(1, height - P.top - P.bottom);
+
+  let maxDay = 1;
+  let minV = 0, maxV = 0;
+  for (const line of cycleLines) {
+    for (const p of line.points) {
+      if (p.day > maxDay) maxDay = p.day;
+      if (p.percent < minV) minV = p.percent;
+      if (p.percent > maxV) maxV = p.percent;
+    }
+  }
+  const vRange = maxV - minV || 1;
+  minV -= vRange * 0.08;
+  maxV += vRange * 0.08;
+  const range = maxV - minV || 1;
+  const toX = (day) => P.left + (day / maxDay) * chartW;
+  const toY = (pct) => P.top + chartH - ((pct - minV) / range) * chartH;
+
+  // Baseline at 0%
+  const baseY = toY(0);
+  let pathsSvg =
+    `<line x1="${P.left}" y1="${baseY.toFixed(2)}" x2="${(P.left + chartW).toFixed(2)}" y2="${baseY.toFixed(2)}"` +
+    ` stroke="currentColor" stroke-opacity="0.15" stroke-dasharray="4 4"/>`;
+
+  for (const line of cycleLines) {
+    if (line.points.length < 2) continue;
+    const pts = line.points.map((p) => ({ x: toX(p.day), y: toY(p.percent) }));
+    pathsSvg +=
+      `<path d="${monotoneCubicPath(pts)}" fill="none" stroke="${line.color}"` +
+      ` stroke-width="${line.strokeWidth || 2}" stroke-opacity="${line.opacity}"` +
+      ` stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+
+  // Y ticks
+  const tickVals = [minV, (minV + maxV) / 2, maxV, 0].filter((v, i, a) => a.indexOf(v) === i);
+  let ySvg = '';
+  for (const v of tickVals) {
+    if (v < minV || v > maxV) continue;
+    const y = toY(v);
+    const label = (v >= 0 ? '+' : '') + v.toFixed(0) + '%';
+    ySvg +=
+      `<text x="${(P.left + chartW + 4).toFixed(2)}" y="${y.toFixed(2)}"` +
+      ` fill="currentColor" fill-opacity="0.45" font-size="9"` +
+      ` font-family="Inter, system-ui, sans-serif" dominant-baseline="middle">${label}</text>`;
+  }
+
+  if (legendEl) {
+    legendEl.innerHTML = cycleLines.map((line) => {
+      const lab = line.label && /^\d{4}-\d{2}/.test(line.label)
+        ? line.label.slice(0, 7).replace('-', '/')
+        : line.label;
+      return `<span class="nb-chart__legend-item">` +
+        `<span class="nb-chart__legend-dot" style="background:${line.color};opacity:${line.opacity}"></span>` +
+        `<span class="nb-chart__legend-label">${escapeHtml(lab)}</span></span>`;
+    }).join('');
+    legendEl.hidden = false;
+  }
+
+  // Scrub geometry: day-based sample of range 1
+  const r1 = cycleLines[0];
+  const pts = (r1 ? r1.points : []).map((p) => ({
+    x: toX(p.day),
+    y: toY(p.percent),
+    c: p.percent,
+    t: p.day, // day index stored in t for tooltip
+    day: p.day,
+  }));
+
+  const dark = isDark();
+  let tipHtml = null;
+  if (scrub) {
+    const day = scrub.day != null ? scrub.day : scrub.t;
+    const rows = cycleLines.map((line) => {
+      // nearest day
+      let best = null, bestD = Infinity;
+      for (const p of line.points) {
+        const d = Math.abs(p.day - day);
+        if (d < bestD) { bestD = d; best = p; }
+      }
+      if (!best || bestD > 3) return null;
+      const lab = line.label && /^\d{4}/.test(line.label) ? line.label.slice(0, 4) : line.label;
+      return `<div class="nb-chart__tip-row">` +
+        `<span class="nb-chart__legend-dot" style="background:${line.color};opacity:${line.opacity}"></span>` +
+        `<span class="mm__tooltip-date">${escapeHtml(lab)}</span>` +
+        `<span class="mm__tooltip-price" style="margin-left:8px">${best.percent >= 0 ? '+' : ''}${best.percent.toFixed(1)}%</span>` +
+        `</div>`;
+    }).filter(Boolean).join('');
+    tipHtml =
+      `<div class="mm__tooltip-date">Day ${day}</div>` + rows;
+  }
+  const tip = placeTooltip(
+    tipEl,
+    scrub ? { ...scrub, html: tipHtml } : null,
+    width, cycleLines[0].color, P, chartH, dark,
+  );
+
+  const inner = pathsSvg + ySvg;
+  paintStageShell(host, width, height, uid, playEntrance, false, inner, tip.scrubSvg, tip.scrubDefs);
+  return { pts, chartW, chartH, P, width, height, kind: 'cycle', cycleLines, maxDay, toX, toY };
+}
+
+// ── Header label helpers ──────────────────────────────────────────────
+
+function formatChartSinceDate(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d.getTime())) return null;
+  const locale = I18N.lang === 'en' ? 'en-US' : 'pt-BR';
+  let month = d.toLocaleDateString(locale, { month: 'short' }).replace(/\.$/, '').trim();
+  month = month.charAt(0).toUpperCase() + month.slice(1);
+  if (I18N.lang !== 'en') month += '.';
+  return `${d.getDate()} ${month} ${d.getFullYear()}`;
+}
+
+function resolvePrimaryLabel(params, days) {
+  if (params.chartType === 'candle') {
+    if (params.candleInterval) return String(params.candleInterval).toUpperCase();
+    // auto label
+    if (days <= 31) return '1D';
+    if (days <= 90) return '1W';
+    return '1M';
+  }
+  if (params.chartType === 'cycle' && params.cycleRanges && params.cycleRanges[0]) {
+    const r = params.cycleRanges[0];
+    const start = new Date(r.startDate + 'T00:00:00Z').getTime();
+    const end = r.endDate ? new Date(r.endDate + 'T00:00:00Z').getTime() : Date.now();
+    const d = Math.max(1, Math.ceil((end - start) / ONE_DAY_MS));
+    if (d >= 365) return `${Math.round(d / 365)}Y`;
+    if (d >= 30) return `${Math.round(d / 30)}M`;
+    return `${d}D`;
+  }
+  if (params.timeRange) return String(params.timeRange).toUpperCase();
+  if (days >= 365) return `${Math.round(days / 365)}Y`;
+  if (days >= 30) return `${Math.round(days / 30)}M`;
+  return `${days}D`;
+}
+
+function buildChartHeadHtml(params, days, percentChange, sinceDateStr) {
+  const asset = escapeHtml(params.asset || '');
+  const primary = escapeHtml(resolvePrimaryLabel(params, days));
+  let mid = '';
+  if (params.chartType === 'rsi') {
+    const cfg = params.rsiConfig || { period: RSI_PERIOD, unit: days > 90 ? 'w' : 'd' };
+    mid = ` <span class="nb-chart__sep">•</span> RSI ${cfg.period}${cfg.unit.toUpperCase()}`;
+  }
+  let pctHtml = '';
+  if (percentChange != null && isFinite(percentChange)) {
+    const up = percentChange >= 0;
+    pctHtml = `<div class="nb-chart__pct ${up ? 'up' : 'down'}">${up ? '+' : ''}${percentChange.toFixed(2)}%</div>`;
+  }
+  const since = sinceDateStr ? formatChartSinceDate(sinceDateStr) : null;
+  const sinceHtml = since
+    ? `<div class="nb-chart__since">${escapeHtml(I18N.t('chart.since').replace('{date}', since))}</div>`
+    : '';
+  return `<div class="nb-chart__head">` +
+    `<div class="nb-chart__title">${asset} <span class="nb-chart__sep">•</span> ${primary}${mid}</div>` +
+    pctHtml + sinceHtml +
+  `</div>`;
+}
+
 
 // ── Market modal (chart) ──────────────────────────────────────────────
 
@@ -1718,6 +3252,89 @@ function parseWidgetKeyValues(content) {
   return { asset: asset.toUpperCase(), params };
 }
 
+/** Parse `;ema:200w-blue,50d-green` — app transforms.parseEmaOverlays. */
+function parseEmaOverlays(emaStr) {
+  const parts = String(emaStr || '').split(',').slice(0, 3);
+  const overlays = [];
+  for (const part of parts) {
+    const match = part.match(/^(\d+)([dw])-([a-z]+)(?:-([ohlc]))?$/i);
+    if (!match) continue;
+    const period = parseInt(match[1], 10);
+    const unit = match[2].toLowerCase();
+    const colorName = match[3].toLowerCase();
+    const color = EMA_COLORS[colorName];
+    if (!color || period <= 0) continue;
+    const fieldRaw = match[4] ? match[4].toLowerCase() : undefined;
+    const field = fieldRaw && fieldRaw !== 'c' ? fieldRaw : undefined;
+    overlays.push({ period, unit, colorName, color, ...(field ? { field } : {}) });
+  }
+  return overlays.length ? overlays : undefined;
+}
+
+/** Parse `;line:VALUE|FROM|TO|COLOR|OPACITY|STYLE|LABEL,...` — app parseHorizontalLines. */
+function parseHorizontalLines(lineStr) {
+  const parts = String(lineStr || '').split(',');
+  const lines = [];
+  for (const part of parts) {
+    const fields = part.split('|');
+    if (fields.length < 4) continue;
+    const value = parseFloat(fields[0]);
+    if (isNaN(value) || value <= 0) continue;
+    const fromDate = fields[1] && /^\d{4}-\d{2}-\d{2}$/.test(fields[1]) ? fields[1] : undefined;
+    const toDate = fields[2] && /^\d{4}-\d{2}-\d{2}$/.test(fields[2]) ? fields[2] : undefined;
+    const colorName = (fields[3] || '').toLowerCase();
+    const color = EMA_COLORS[colorName];
+    if (!color) continue;
+    const opacityRaw = fields[4] ? parseFloat(fields[4]) : HLINE_DEFAULT_OPACITY;
+    const opacity = isNaN(opacityRaw) ? HLINE_DEFAULT_OPACITY : Math.max(0, Math.min(1, opacityRaw));
+    const styleRaw = (fields[5] || '').toLowerCase();
+    const style = styleRaw === 'dashed' ? 'dashed' : styleRaw === 'dotted' ? 'dotted' : 'solid';
+    const label = fields[6] || undefined;
+    const strokeW = fields[7] ? parseFloat(fields[7]) : undefined;
+    const strokeWidth = strokeW && !isNaN(strokeW) && strokeW > 0 ? strokeW : undefined;
+    const labelVRaw = (fields[8] || '').toLowerCase();
+    const labelV = labelVRaw === 'above' || labelVRaw === 'below' ? labelVRaw : undefined;
+    const labelHRaw = (fields[9] || '').toLowerCase();
+    const labelH = labelHRaw === 'left' || labelHRaw === 'right' ? labelHRaw : undefined;
+    const labelDist = fields[10] ? parseFloat(fields[10]) : undefined;
+    const labelDistance = labelDist !== undefined && !isNaN(labelDist) && labelDist >= 0 ? labelDist : undefined;
+    lines.push({
+      value, fromDate, toDate, colorName, color, opacity, style, label,
+      strokeWidth, labelV, labelH, labelDistance,
+    });
+  }
+  return lines.length ? lines : undefined;
+}
+
+function isEmojiName(name) {
+  return /[^\x20-\x7E]/.test(name);
+}
+
+/** Parse `;icon:DATE|NAME|COLOR|POSITION,...` — app parseIconMarkers. */
+function parseIconMarkers(iconStr) {
+  const parts = String(iconStr || '').split(',');
+  const markers = [];
+  for (const part of parts) {
+    const fields = part.split('|');
+    if (fields.length < 4) continue;
+    const date = fields[0].trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    const name = fields[1].trim();
+    if (!name) continue;
+    const colorName = (fields[2] || '').toLowerCase().trim();
+    const color = EMA_COLORS[colorName];
+    if (!color) continue;
+    const positionRaw = (fields[3] || '').toLowerCase().trim();
+    if (positionRaw !== 'top' && positionRaw !== 'bottom') continue;
+    const gapRaw = fields[4] ? parseFloat(fields[4]) : undefined;
+    const gap = gapRaw !== undefined && !isNaN(gapRaw) && gapRaw >= 0 ? gapRaw : undefined;
+    markers.push({
+      date, name, isEmoji: isEmojiName(name), colorName, color, position: positionRaw, gap,
+    });
+  }
+  return markers.length ? markers : undefined;
+}
+
 function parseChartFromKV(asset, kv) {
   const date = kv.date;
   const chartType = kv.type;
@@ -1739,7 +3356,72 @@ function parseChartFromKV(asset, kv) {
   };
   if (timeRange) out.timeRange = timeRange;
   else if (fromDate) out.fromDate = fromDate;
+  if (kv.candle) out.candleInterval = kv.candle;
+  if (kv.ema) {
+    const emas = parseEmaOverlays(kv.ema);
+    if (emas) out.emaOverlays = emas;
+  }
+  if (kv.rsi) {
+    const rsiMatch = String(kv.rsi).match(/^(\d+)([dw])$/i);
+    if (rsiMatch) {
+      const period = parseInt(rsiMatch[1], 10);
+      const unit = rsiMatch[2].toLowerCase();
+      if (period > 0) out.rsiConfig = { period, unit };
+    }
+  }
+  if (kv.line) {
+    const lines = parseHorizontalLines(kv.line);
+    if (lines) out.horizontalLines = lines;
+  }
+  if (kv.icon) {
+    const icons = parseIconMarkers(kv.icon);
+    if (icons) out.iconMarkers = icons;
+  }
+  if (kv.fng) {
+    const levels = parseFngLevels(kv.fng);
+    if (levels) out.fngLevels = levels;
+  }
+  if (kv.cycle) {
+    const ranges = parseCycleRanges(kv.cycle);
+    if (ranges) out.cycleRanges = ranges;
+  }
   return out;
+}
+
+/** Parse `;fng:ef-1,f-0,...` — app parseFngLevels. */
+function parseFngLevels(str) {
+  const result = { ef: true, f: true, n: true, g: true, eg: true };
+  const valid = new Set(['ef', 'f', 'n', 'g', 'eg']);
+  let has = false;
+  for (const part of String(str || '').split(',')) {
+    const m = part.trim().match(/^(ef|f|n|g|eg)-([01])$/);
+    if (!m || !valid.has(m[1])) continue;
+    result[m[1]] = m[2] === '1';
+    has = true;
+  }
+  return has ? result : undefined;
+}
+
+/** Parse `;cycle:START|END|COLOR|OPACITY|STROKE,...` — app parseCycleRanges. */
+function parseCycleRanges(str) {
+  const ranges = [];
+  for (const part of String(str || '').split(',')) {
+    const fields = part.split('|');
+    if (fields.length < 4) continue;
+    const startDate = fields[0].trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) continue;
+    const endRaw = (fields[1] || '').trim();
+    const endDate = endRaw && /^\d{4}-\d{2}-\d{2}$/.test(endRaw) ? endRaw : undefined;
+    const colorName = (fields[2] || '').toLowerCase().trim();
+    const color = EMA_COLORS[colorName];
+    if (!color) continue;
+    const opacityRaw = parseFloat(fields[3]);
+    const opacity = !isNaN(opacityRaw) && opacityRaw >= 0 && opacityRaw <= 1 ? opacityRaw : 1;
+    const strokeRaw = fields[4] !== undefined ? parseFloat(fields[4]) : NaN;
+    const strokeWidth = !isNaN(strokeRaw) && strokeRaw > 0 ? strokeRaw : 2;
+    ranges.push({ startDate, endDate, colorName, color, opacity, strokeWidth });
+  }
+  return ranges.length ? ranges.slice(0, 4) : undefined;
 }
 
 function parsePriceFromKV(asset, kv) {
@@ -1781,14 +3463,24 @@ function unsupportedWidgetHtml() {
 }
 
 function chartEmbedPlaceholder(params) {
-  // Only line charts are painted on the web for now; other types get unsupported.
-  if (params.chartType !== 'line') return unsupportedWidgetHtml();
+  const type = params.chartType;
+  if (!['line', 'candle', 'rsi', 'fng', 'cycle'].includes(type)) return unsupportedWidgetHtml();
+  // Cycle may omit asset range data but still needs BTC price series.
+  // Candle may use worker for unknown symbols (no coinId required up-front).
   const coinId = SYMBOL_TO_COINGECKO[params.asset];
-  if (!coinId) return unsupportedWidgetHtml();
+  if (type !== 'candle' && type !== 'cycle' && !coinId) return unsupportedWidgetHtml();
+  if (type === 'cycle' && !coinId && params.asset !== 'BTC') {
+    // Cycle always plots the asset's price ranges — require known coin
+    if (!SYMBOL_TO_COINGECKO[params.asset]) return unsupportedWidgetHtml();
+  }
+  if (type === 'cycle' && (!params.cycleRanges || !params.cycleRanges.length)) {
+    return unsupportedWidgetHtml();
+  }
   const payload = escapeHtml(JSON.stringify(params));
-  // size:half is paired into .nb-half-row by renderBlocks (class kept for debugging).
-  const half = params.size === 'half' ? ' nb-chart--half' : '';
-  return `<div class="nb-chart${half}" data-nb-chart="${payload}" role="img" aria-label="${escapeHtml(params.asset)} chart">` +
+  const heightClass = chartHeightClass(params);
+  const h = chartHeightFor(params);
+  return `<div class="nb-chart${heightClass}" data-nb-chart="${payload}" style="height:${h}px"` +
+    ` role="img" aria-label="${escapeHtml(params.asset || 'chart')} ${escapeHtml(type)} chart">` +
     `<div class="nb-chart__sk"></div></div>`;
 }
 
@@ -1836,56 +3528,344 @@ function daysForChartParams(params) {
   return resolveTimeRangeDays(params.timeRange || '3m');
 }
 
+/** Paint (or re-paint) an inline Notion chart from its `_nbState`. */
+function paintInlineChart(el, opts) {
+  const st = el && el._nbState;
+  if (!st) return;
+  const canvas = el.querySelector('.nb-chart__canvas');
+  const tip = el.querySelector('.nb-chart__tip');
+  const legend = el.querySelector('.nb-chart__legend');
+  if (!canvas) return;
+  const playEntrance = !!(opts && opts.playEntrance) && !st.scrub;
+  const type = st.chartType || 'line';
+  const common = {
+    height: st.height,
+    scrub: st.scrub,
+    uid: st.uid,
+    playEntrance,
+    legendEl: legend,
+  };
+
+  if (type === 'candle') {
+    st.geom = paintCandleChart(canvas, tip, {
+      ...common,
+      candles: st.candles,
+      accent: st.accent,
+      pad: CHART_PAD_INLINE,
+      emaOverlays: st.emaOverlays,
+      horizontalLines: st.horizontalLines,
+      iconMarkers: st.iconMarkers,
+      ohlcPoints: st.ohlcPoints,
+      coinId: st.coinId,
+      closeSeries: st.points,
+    });
+  } else if (type === 'rsi') {
+    st.geom = paintRsiChart(canvas, tip, {
+      ...common,
+      rsiPoints: st.rsiPoints,
+      pad: RSI_PAD_INLINE,
+      horizontalLines: st.horizontalLines,
+      iconMarkers: st.iconMarkers,
+    });
+  } else if (type === 'fng') {
+    st.geom = paintFngChart(canvas, tip, {
+      ...common,
+      points: st.points,
+      days: st.days,
+      currentPrice: st.live ? st.currentPrice : null,
+      pad: CHART_PAD_INLINE,
+      fngHistory: st.fngHistory || [],
+      fngLevels: st.fngLevels || DEFAULT_FNG_LEVELS,
+    });
+  } else if (type === 'cycle') {
+    st.geom = paintCycleChart(canvas, tip, {
+      ...common,
+      cycleLines: st.cycleLines,
+      pad: CHART_PAD_INLINE,
+    });
+  } else {
+    // line (default)
+    st.geom = paintPriceChart(canvas, tip, {
+      points: st.points,
+      days: st.days,
+      currentPrice: st.live ? st.currentPrice : null,
+      accent: st.accent,
+      height: st.height,
+      pad: CHART_PAD_INLINE,
+      scrub: st.scrub,
+      uid: st.uid,
+      playEntrance,
+      withSlide: false,
+      liveDot: st.live,
+      emaOverlays: st.emaOverlays,
+      horizontalLines: st.horizontalLines,
+      iconMarkers: st.iconMarkers,
+      ohlcPoints: st.ohlcPoints,
+      coinId: st.coinId,
+      legendEl: legend,
+    });
+  }
+}
+
+/** Wire hover/press scrub on an inline chart (app interactive: true). */
+function wireInlineChartScrub(el) {
+  if (!el || el._nbScrubWired) return;
+  el._nbScrubWired = true;
+  let active = false;
+  const canHover = () => {
+    try { return window.matchMedia('(hover: hover) and (pointer: fine)').matches; }
+    catch (e) { return false; }
+  };
+  const scrubAt = (clientX) => {
+    const st = el._nbState;
+    if (!st || !st.geom || !st.geom.pts || !st.geom.pts.length) return;
+    // Hit-test against the plot (coords match paint geometry / tip position)
+    const plot = el.querySelector('.nb-chart__plot') || el.querySelector('.nb-chart__canvas') || el;
+    const crect = plot.getBoundingClientRect();
+    const x = clientX - crect.left;
+    let best = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < st.geom.pts.length; i++) {
+      const d = Math.abs(st.geom.pts[i].x - x);
+      if (d < bestDist) { bestDist = d; best = i; }
+    }
+    const p = st.geom.pts[best];
+    st.scrub = {
+      i: best, x: p.x, y: p.y, price: p.c, t: p.t,
+      day: p.day, o: p.o, h: p.h, l: p.l,
+      color: p.isBullish != null ? (p.isBullish ? BULLISH_COLOR : BEARISH_COLOR) : st.accent,
+    };
+    paintInlineChart(el, { playEntrance: false });
+  };
+  const endScrub = () => {
+    const st = el._nbState;
+    if (!st || !st.scrub) return;
+    st.scrub = null;
+    paintInlineChart(el, { playEntrance: false });
+  };
+  el.addEventListener('pointerdown', (e) => {
+    if (!el._nbState || !el._nbState.geom) return;
+    active = true;
+    try { el.setPointerCapture(e.pointerId); } catch (err) {}
+    scrubAt(e.clientX);
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!el._nbState || !el._nbState.geom) return;
+    if (!active && canHover() && e.buttons === 0) {
+      scrubAt(e.clientX);
+      return;
+    }
+    if (!active) return;
+    scrubAt(e.clientX);
+  });
+  const onUp = () => {
+    if (!active) return;
+    active = false;
+    if (!canHover()) endScrub();
+  };
+  el.addEventListener('pointerup', onUp);
+  el.addEventListener('pointercancel', onUp);
+  el.addEventListener('pointerleave', () => {
+    active = false;
+    endScrub();
+  });
+}
+
+function shellInlineChart(el, headHtml, canvasHeight) {
+  // Plot wrap owns absolute tip/legend so coords stay canvas-relative even with a header.
+  el.innerHTML =
+    (headHtml || '') +
+    `<div class="nb-chart__plot" style="height:${canvasHeight || 200}px">` +
+      `<div class="nb-chart__canvas"></div>` +
+      `<div class="nb-chart__legend" hidden></div>` +
+      `<div class="mm__tooltip nb-chart__tip hidden"></div>` +
+    `</div>`;
+  wireInlineChartScrub(el);
+}
+
 async function mountInlineChart(el) {
   if (!el || el.dataset.mounted === '1') return;
   el.dataset.mounted = '1';
   let params;
   try { params = JSON.parse(el.getAttribute('data-nb-chart') || '{}'); } catch (e) { return; }
-  const coinId = SYMBOL_TO_COINGECKO[params.asset];
-  if (!coinId || params.chartType !== 'line') {
+  const type = params.chartType || 'line';
+  if (!['line', 'candle', 'rsi', 'fng', 'cycle'].includes(type)) {
     el.outerHTML = unsupportedWidgetHtml();
     return;
   }
-  const days = daysForChartParams(params);
+  const coinId = SYMBOL_TO_COINGECKO[params.asset] || null;
+  // Candle can go through worker without a bundled coinId
+  if (type !== 'candle' && !coinId) {
+    el.outerHTML = unsupportedWidgetHtml();
+    return;
+  }
+  if (type === 'cycle' && (!params.cycleRanges || !params.cycleRanges.length)) {
+    el.outerHTML = unsupportedWidgetHtml();
+    return;
+  }
+
+  const days = type === 'cycle'
+    ? (() => {
+        const ranges = params.cycleRanges || [];
+        let earliest = Date.now(), latest = 0;
+        for (const r of ranges) {
+          const s = new Date(r.startDate + 'T00:00:00Z').getTime();
+          const e = r.endDate ? new Date(r.endDate + 'T00:00:00Z').getTime() : Date.now();
+          if (s < earliest) earliest = s;
+          if (e > latest) latest = e;
+        }
+        return Math.min(Math.max(Math.ceil((latest - earliest) / ONE_DAY_MS), 1), MAX_CHART_DAYS);
+      })()
+    : daysForChartParams(params);
+
   const endDate = params.date !== 'now' ? params.date : null;
-  const accent = coinAccent(coinId);
   const live = params.date === 'now';
-  const height = CHART_HEIGHT_INLINE;
+  const height = chartHeightFor(params);
+  const accent = coinId ? coinAccent(coinId) : '#F15B24';
+  const emaOverlays = params.emaOverlays || null;
+  const horizontalLines = params.horizontalLines || null;
+  const iconMarkers = params.iconMarkers || null;
+  const uid = 'nb-' + (el.dataset.uid || Math.random().toString(36).slice(2, 8));
 
   try {
-    const points = await fetchCoinChart(coinId, Math.max(days, 30), endDate);
-    // Drop if node was removed (modal closed / content replaced)
-    if (!el.isConnected) return;
+    if (coinId) await loadBundledChart(coinId);
+
+    let points = null;
+    let candles = null;
+    let rsiPoints = null;
+    let fngHistory = null;
+    let cycleLines = null;
     let currentPrice = null;
-    if (live) {
-      const m = marqueePrices.find((c) => c.id === coinId);
-      if (m && m.price != null) currentPrice = m.price;
-      else if (points.length) currentPrice = points[points.length - 1].c;
+    let ohlcPoints = null;
+    let percentChange = null;
+    let sinceDateStr = params.fromDate || null;
+
+    if (type === 'candle') {
+      candles = await loadCandleSeries(params, coinId, days);
+      if (!el.isConnected) return;
+      if (candles.length < 2) throw new Error('empty candles');
+      // Close series for EMA (daily if available)
+      if (coinId) {
+        const warmup = emaWarmupDaysFor(emaOverlays, coinId);
+        points = await fetchCoinChart(coinId, Math.min(days + warmup, MAX_CHART_DAYS), endDate);
+        ohlcPoints = (bundledChartCache[coinId] && bundledChartCache[coinId].ohlc) || null;
+      } else {
+        points = candles.map((c) => ({ t: c.t, c: c.c }));
+      }
+      if (live && coinId) {
+        const m = marqueePrices.find((c) => c.id === coinId);
+        if (m && m.price != null) {
+          currentPrice = m.price;
+          // Patch last candle close with live price
+          candles = candles.map((c, i) =>
+            i === candles.length - 1 ? { ...c, c: currentPrice } : c);
+        }
+      }
+      if (candles.length >= 2) {
+        percentChange = ((candles[candles.length - 1].c - candles[0].c) / candles[0].c) * 100;
+      }
+      if (!sinceDateStr && candles[0]) {
+        sinceDateStr = new Date(candles[0].t).toISOString().slice(0, 10);
+      }
+    } else if (type === 'rsi') {
+      const rsiCfg = params.rsiConfig || {
+        period: RSI_PERIOD,
+        unit: days > 90 ? 'w' : 'd',
+      };
+      const warmup = rsiCfg.unit === 'w' ? rsiCfg.period * 7 : rsiCfg.period;
+      points = await fetchCoinChart(coinId, Math.min(days + warmup + 5, MAX_CHART_DAYS), endDate);
+      if (!el.isConnected) return;
+      const allRsi = rsiCfg.unit === 'w'
+        ? calculateWeeklyRSI(points, rsiCfg.period)
+        : calculateRSI(points, rsiCfg.period);
+      // Slice to visible window
+      const ref = allRsi.length ? allRsi[allRsi.length - 1].t : Date.now();
+      const cutoff = ref - days * ONE_DAY_MS;
+      rsiPoints = allRsi.filter((p) => p.t >= cutoff);
+      if (rsiPoints.length < 2) rsiPoints = allRsi.slice(-Math.min(allRsi.length, 30));
+      // Percent = underlying price change over visible window (app ChartBlock)
+      const vis = points.filter((pt) => pt.t >= (rsiPoints[0] ? rsiPoints[0].t : 0));
+      if (vis.length >= 2) {
+        percentChange = ((vis[vis.length - 1].c - vis[0].c) / vis[0].c) * 100;
+      }
+      if (!sinceDateStr && rsiPoints[0]) {
+        sinceDateStr = new Date(rsiPoints[0].t).toISOString().slice(0, 10);
+      }
+    } else if (type === 'fng') {
+      points = await fetchCoinChart(coinId, Math.max(days, 30), endDate);
+      fngHistory = await loadFngHistory();
+      if (!el.isConnected) return;
+      if (live) {
+        const m = marqueePrices.find((c) => c.id === coinId);
+        if (m && m.price != null) currentPrice = m.price;
+        else if (points.length) currentPrice = points[points.length - 1].c;
+      }
+      const sliced = sliceChartPoints(points, days, currentPrice);
+      if (sliced.length >= 2) {
+        percentChange = ((sliced[sliced.length - 1].c - sliced[0].c) / sliced[0].c) * 100;
+      }
+      if (!sinceDateStr && sliced[0]) {
+        sinceDateStr = new Date(sliced[0].t).toISOString().slice(0, 10);
+      }
+    } else if (type === 'cycle') {
+      // Need full span covering all ranges
+      points = await fetchCoinChart(coinId, Math.max(days, 30), null);
+      if (!el.isConnected) return;
+      cycleLines = buildCycleLinesFromRanges(points, params.cycleRanges);
+      if (!cycleLines.length) throw new Error('empty cycle');
+      if (cycleLines[0].points.length >= 2) {
+        const pts = cycleLines[0].points;
+        percentChange = pts[pts.length - 1].percent;
+      }
+      sinceDateStr = params.cycleRanges[0].startDate;
+    } else {
+      // line
+      const warmup = emaWarmupDaysFor(emaOverlays, coinId);
+      const fetchDays = Math.min(Math.max(days + warmup, 30), MAX_CHART_DAYS);
+      points = await fetchCoinChart(coinId, fetchDays, endDate);
+      if (!el.isConnected) return;
+      if (live) {
+        const m = marqueePrices.find((c) => c.id === coinId);
+        if (m && m.price != null) currentPrice = m.price;
+        else if (points.length) currentPrice = points[points.length - 1].c;
+      }
+      ohlcPoints = (bundledChartCache[coinId] && bundledChartCache[coinId].ohlc) || null;
+      const sliced = sliceChartPoints(points, days, currentPrice);
+      if (sliced.length >= 2) {
+        percentChange = ((sliced[sliced.length - 1].c - sliced[0].c) / sliced[0].c) * 100;
+      }
+      if (!sinceDateStr && sliced[0]) {
+        sinceDateStr = new Date(sliced[0].t).toISOString().slice(0, 10);
+      }
     }
-    // Ensure host structure for paint + optional tip
-    el.innerHTML = `<div class="nb-chart__canvas"></div><div class="mm__tooltip nb-chart__tip hidden"></div>`;
-    const canvas = el.querySelector('.nb-chart__canvas');
-    const tip = el.querySelector('.nb-chart__tip');
-    // Wait a frame so clientWidth is correct after skeleton → canvas swap
+
+    if (!el.isConnected) return;
+
+    el._nbState = {
+      chartType: type,
+      points, candles, rsiPoints, fngHistory, cycleLines,
+      days, currentPrice, accent, height, live, coinId, uid,
+      emaOverlays, horizontalLines, iconMarkers, ohlcPoints,
+      fngLevels: params.fngLevels || DEFAULT_FNG_LEVELS,
+      scrub: null, geom: null,
+    };
+
+    // Adjust container height for head + chart
+    const headHtml = buildChartHeadHtml(params, days, percentChange, sinceDateStr);
+    el.style.height = '';
+    el.classList.add('nb-chart--with-head');
+    shellInlineChart(el, headHtml, height);
+
     requestAnimationFrame(() => {
       if (!el.isConnected) return;
-      paintPriceChart(canvas, tip, {
-        points,
-        days,
-        currentPrice: live ? currentPrice : null,
-        accent,
-        height,
-        pad: CHART_PAD_INLINE,
-        scrub: null,
-        uid: 'nb-' + (el.dataset.uid || Math.random().toString(36).slice(2, 8)),
-        playEntrance: true,
-        withSlide: false, // inline charts: no slide (app withSlide: !inline)
-        liveDot: live,
-      });
+      paintInlineChart(el, { playEntrance: true });
     });
   } catch (e) {
     if (!el.isConnected) return;
-    el.innerHTML = `<div class="pc__fallback">${I18N.t('widget.chartError')}</div>`;
+    const msg = e && e.message === 'symbol_not_found'
+      ? I18N.t('widget.unknownAsset') + ': ' + escapeHtml(params.asset)
+      : I18N.t('widget.chartError');
+    el.innerHTML = `<div class="pc__fallback">${msg}</div>`;
   }
 }
 
