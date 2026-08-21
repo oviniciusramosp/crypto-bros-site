@@ -5007,7 +5007,13 @@ function richText(arr) {
     if (!hl) { out += parts[i].html; i++; continue; }
     let j = i + 1;
     while (j < parts.length && parts[j].highlight === hl) j++;
-    out += `<span class="nb-hl nb-hl--${escapeHtml(hl)}">${parts.slice(i, j).map((p) => p.html).join('')}</span>`;
+    const restText = parts.slice(j).map((p) => String(p.html || '').replace(/<[^>]*>/g, '')).join('');
+    const endCls = !/\S/.test(restText)
+      ? ' nb-hl--end'
+      : /^[\s]*[.,;:!?…)'"”’\]\}]/.test(restText)
+        ? ' nb-hl--punct'
+        : '';
+    out += `<span class="nb-hl nb-hl--${escapeHtml(hl)}${endCls}">${parts.slice(i, j).map((p) => p.html).join('')}</span>`;
     i = j;
   }
   return out;
