@@ -5060,21 +5060,18 @@ function progressiveImgAttrs(src, opts) {
   return { full, thumb };
 }
 
-/** Wire load/error on a progressive wrapper so the blur thumb fades out. */
+/** Hide the blur thumb after the full layer has painted. Never mutates layout. */
 function bindProgressiveImg(wrap) {
   if (!wrap || wrap.dataset.lazyBound) return;
   wrap.dataset.lazyBound = '1';
+  const thumb = wrap.querySelector('.lazy-img__thumb');
   const full = wrap.querySelector('.lazy-img__full');
-  if (!full) { wrap.classList.add('is-loaded'); return; }
-  const done = (ok) => {
-    wrap.classList.add('is-loaded');
-    if (!ok) wrap.classList.add('is-error');
-  };
-  if (full.complete && full.naturalWidth) done(true);
-  else if (full.complete) done(false); // decoded as broken
+  if (!thumb || !full) return;
+  const hide = () => { wrap.classList.add('is-loaded'); };
+  if (full.complete) hide();
   else {
-    full.addEventListener('load', () => done(true), { once: true });
-    full.addEventListener('error', () => done(false), { once: true });
+    full.addEventListener('load', hide, { once: true });
+    full.addEventListener('error', hide, { once: true });
   }
 }
 
@@ -5086,31 +5083,26 @@ function hydrateLazyImages(root) {
 
 /**
  * DOM node for progressive cover/content images.
- * Falls back to a plain <img loading=lazy> when no thumb is available.
+ * Always a reserved-ratio frame — even when there is no thumb (signed S3 URLs).
+ * Cover slots load eagerly so the hero is not lazy-deferred on modal open.
  */
 function progressiveImgEl(src, className, opts) {
   const { full, thumb } = progressiveImgAttrs(src, opts);
-  if (!thumb) {
-    const img = el('img', className);
-    img.src = full;
-    img.alt = '';
-    img.loading = 'lazy';
-    img.decoding = 'async';
-    img.onerror = () => img.remove();
-    return img;
-  }
   const wrap = el('span', `lazy-img${className ? ` ${className}` : ''}`);
-  const t = el('img', 'lazy-img__thumb');
-  t.src = thumb;
-  t.alt = '';
-  t.decoding = 'async';
-  t.setAttribute('aria-hidden', 'true');
+  const eager = className && /(modal__cover|card__cover)/.test(className);
+  if (thumb) {
+    const t = el('img', 'lazy-img__thumb');
+    t.src = thumb;
+    t.alt = '';
+    t.decoding = 'async';
+    t.setAttribute('aria-hidden', 'true');
+    wrap.appendChild(t);
+  }
   const f = el('img', 'lazy-img__full');
   f.src = full;
   f.alt = '';
-  f.loading = 'lazy';
   f.decoding = 'async';
-  wrap.appendChild(t);
+  if (!eager) f.loading = 'lazy';
   wrap.appendChild(f);
   bindProgressiveImg(wrap);
   return wrap;
@@ -5119,13 +5111,13 @@ function progressiveImgEl(src, className, opts) {
 /** HTML string variant for renderBlocks(). Call hydrateLazyImages() after insert. */
 function progressiveImgHtml(src, className, opts) {
   const { full, thumb } = progressiveImgAttrs(src, opts);
-  if (!thumb) {
-    return `<img class="${className || ''}" src="${escapeHtml(full)}" loading="lazy" decoding="async" alt=""/>`;
-  }
   const cls = `lazy-img${className ? ` ${className}` : ''}`;
+  const thumbTag = thumb
+    ? `<img class="lazy-img__thumb" src="${escapeHtml(thumb)}" alt="" aria-hidden="true" decoding="async"/>`
+    : '';
   return (
     `<span class="${cls}">` +
-      `<img class="lazy-img__thumb" src="${escapeHtml(thumb)}" alt="" aria-hidden="true" decoding="async"/>` +
+      thumbTag +
       `<img class="lazy-img__full" src="${escapeHtml(full)}" loading="lazy" decoding="async" alt=""/>` +
     `</span>`
   );
@@ -5867,16 +5859,44 @@ function renderPostModal(post) {
   hydrateWidgets(content);
   maybeSuggestPostLanguage(post);
 }
+
+/** Cover + author + title + body lines so the shell does not jump on first fetch. */
+function postDetailSkeleton() {
+  const wrap = el('div', 'skeleton post-detail-skel');
+  wrap.setAttribute('aria-hidden', 'true');
+  wrap.appendChild(el('div', 'modal__cover sk-block sk-block--cover'));
+  const body = el('div', 'modal__body');
+  body.appendChild(el('div', 'sk-block sk-block--author'));
+  body.appendChild(el('div', 'modal__title sk-block sk-block--detail-title'));
+  const content = el('div', 'modal__content');
+  const widths = ['100%', '94%', '88%', '100%', '72%', '96%', '90%', '58%'];
+  for (let i = 0; i < widths.length; i++) {
+    const line = el('div', 'sk-block sk-block--para');
+    line.style.width = widths[i];
+    if (i > 0 && i % 3 === 0) line.style.marginTop = '18px';
+    content.appendChild(line);
+  }
+  body.appendChild(content);
+  wrap.appendChild(body);
+  return wrap;
+}
+
 const postCache = {}; // id → full post (in-memory, session-lived)
 async function openPost(id, fromPop) {
   currentPostId = id;
   currentLessonId = null;
   closeLessonPanel(); // posts always use the centered modal, never the lesson split
   if (!fromPop) history.pushState({ post: id }, '', `?post=${encodeURIComponent(id)}`);
-  openModal();
   $('modal-complete').classList.add('hidden');
-  if (postCache[id]) { renderPostModal(postCache[id]); return; }
-  $('modal-content').innerHTML = '<div class="spinner"></div>';
+  // Paint content (or a cover-shaped skeleton) BEFORE showing the overlay so the
+  // panel never opens at spinner height then snaps to 90vh.
+  if (postCache[id]) {
+    renderPostModal(postCache[id]);
+    openModal();
+    return;
+  }
+  $('modal-content').replaceChildren(postDetailSkeleton());
+  openModal();
   if (isPreview()) {
     const m = feedPosts.find((p) => p.id === id) || feedHistory.find((p) => p.id === id);
     if (m) renderPostModal(m); else $('modal-content').innerHTML = `<div class="modal__state">${I18N.t('modal.error')}</div>`;
@@ -5890,7 +5910,9 @@ async function openPost(id, fromPop) {
     postCache[id] = post;
     if (currentPostId === id) renderPostModal(post); // ignore if the user already opened another post
   } catch (e) {
-    $('modal-content').innerHTML = `<div class="modal__state">${I18N.t('modal.error')}</div>`;
+    if (currentPostId === id) {
+      $('modal-content').innerHTML = `<div class="modal__state">${I18N.t('modal.error')}</div>`;
+    }
   }
 }
 
