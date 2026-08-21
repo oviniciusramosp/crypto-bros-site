@@ -4940,6 +4940,25 @@ function wireGlossaryTooltipRoot(root) {
 }
 
 // ── Notion block renderer (raw block JSON) ────────────────────────────
+const WRITER_BLOCK_TAGS =
+  'paragraph|heading_[123]|quote|callout|divider|bullet|numbered|code|image|bookmark|to_do|toggle|bulleted_list_item|numbered_list_item';
+const WRITER_ORPHAN_RE = new RegExp(
+  '\\[(?:bg|c):[a-z_]*\\]|\\[\\/(?:bg|c)\\]|\\[\\/?(?:u|verde|vermelho|a)\\]|\\[\\/a\\](?:\\([^)]*\\))?|\\[(?:' + WRITER_BLOCK_TAGS + ')\\]',
+  'gi',
+);
+function stripWriterMarkup(text) {
+  if (!text) return text;
+  let s = String(text);
+  let prev;
+  do {
+    prev = s;
+    s = s.replace(/\[a\]([\s\S]*?)\[\/a\](?:\([^)]*\))?/g, '$1');
+    s = s.replace(/\[(?:bg|c):[a-z_]+\]([\s\S]*?)\[\/(?:bg|c)\]/gi, '$1');
+    s = s.replace(/\[u\]([\s\S]*?)\[\/u\]/gi, '$1');
+    s = s.replace(/\[(verde|vermelho)\]([\s\S]*?)\[\/\1\]/gi, '$2');
+  } while (s !== prev);
+  return s.replace(WRITER_ORPHAN_RE, '');
+}
 function richTextItemInner(t) {
   const ce =
     t.type === 'mention' && t.mention && t.mention.type === 'custom_emoji'
@@ -4953,7 +4972,8 @@ function richTextItemInner(t) {
 
   const a = t.annotations || {};
   const href = t.href || (t.text && t.text.link && t.text.link.url);
-  const plain = t.plain_text || '';
+  const rawPlain = t.plain_text || '';
+  const plain = a.code ? rawPlain : stripWriterMarkup(rawPlain);
   let html = (a.code || href) ? escapeHtml(plain) : applyGlossaryToPlainText(plain);
   if (a.code) html = `<code>${html}</code>`;
   if (a.bold) html = `<strong>${html}</strong>`;
