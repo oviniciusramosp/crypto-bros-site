@@ -5007,12 +5007,14 @@ function richText(arr) {
     if (!hl) { out += parts[i].html; i++; continue; }
     let j = i + 1;
     while (j < parts.length && parts[j].highlight === hl) j++;
-    const restText = parts.slice(j).map((p) => String(p.html || '').replace(/<[^>]*>/g, '')).join('');
-    const endCls = !/\S/.test(restText)
-      ? ' nb-hl--end'
-      : /^[\s]*[.,;:!?…)'"”’\]\}]/.test(restText)
-        ? ' nb-hl--punct'
-        : '';
+    const stripTags = (p) => String(p.html || '').replace(/<[^>]*>/g, '');
+    const beforeText = parts.slice(0, i).map(stripTags).join('');
+    const restText = parts.slice(j).map(stripTags).join('');
+    let endCls = '';
+    if (!/\S/.test(beforeText)) endCls += ' nb-hl--start';
+    else if (/[.,;:!?…('"“‘\[\{]\s*$/.test(beforeText)) endCls += ' nb-hl--lead';
+    if (!/\S/.test(restText)) endCls += ' nb-hl--end';
+    else if (/^[\s]*[.,;:!?…)'"”’\]\}]/.test(restText)) endCls += ' nb-hl--punct';
     out += `<span class="nb-hl nb-hl--${escapeHtml(hl)}${endCls}">${parts.slice(i, j).map((p) => p.html).join('')}</span>`;
     i = j;
   }
