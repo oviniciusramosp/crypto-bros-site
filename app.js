@@ -4940,49 +4940,57 @@ function wireGlossaryTooltipRoot(root) {
 }
 
 // ── Notion block renderer (raw block JSON) ────────────────────────────
+function richTextItemInner(t) {
+  const ce =
+    t.type === 'mention' && t.mention && t.mention.type === 'custom_emoji'
+      ? t.mention.custom_emoji
+      : null;
+  if (ce && ce.url) {
+    const img = `<img class="nb-emoji" src="${escapeHtml(ce.url)}" alt="${escapeHtml(t.plain_text || '')}" loading="lazy"/>`;
+    const link = t.href || (t.text && t.text.link && t.text.link.url);
+    return { html: link ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener">${img}</a>` : img, highlight: null };
+  }
+
+  const a = t.annotations || {};
+  const href = t.href || (t.text && t.text.link && t.text.link.url);
+  const plain = t.plain_text || '';
+  let html = (a.code || href) ? escapeHtml(plain) : applyGlossaryToPlainText(plain);
+  if (a.code) html = `<code>${html}</code>`;
+  if (a.bold) html = `<strong>${html}</strong>`;
+  if (a.italic) html = `<em>${html}</em>`;
+  if (a.strikethrough) html = `<s>${html}</s>`;
+  if (a.underline) html = `<u>${html}</u>`;
+  if (a.color && a.color !== 'default' && !a.color.endsWith('_background') && NOTION_COLORS[a.color]) {
+    html = `<span style="color:${notionHex(a.color)}">${html}</span>`;
+  }
+  if (href) {
+    const internal = internalCalcRoute(href);
+    if (internal) {
+      html = `<a href="${escapeHtml(href)}" data-calc-link="${internal}">${html}</a>`;
+    } else {
+      html = `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${html}</a>`;
+    }
+  }
+  const highlight = (a.color && a.color.endsWith('_background') && !a.code)
+    ? a.color.replace('_background', '')
+    : null;
+  return { html, highlight };
+}
+
 function richText(arr) {
   if (!Array.isArray(arr)) return '';
-  return arr.map((t) => {
-    // A Notion custom emoji arrives as a MENTION whose plain_text is the literal ":name:".
-    // Rendering plain_text — which is all this did — puts ":crypto-doge:" on the page.
-    const ce =
-      t.type === 'mention' && t.mention && t.mention.type === 'custom_emoji'
-        ? t.mention.custom_emoji
-        : null;
-    if (ce && ce.url) {
-      const img = `<img class="nb-emoji" src="${escapeHtml(ce.url)}" alt="${escapeHtml(t.plain_text || '')}" loading="lazy"/>`;
-      const link = t.href || (t.text && t.text.link && t.text.link.url);
-      return link ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener">${img}</a>` : img;
-    }
-
-    const a = t.annotations || {};
-    const href = t.href || (t.text && t.text.link && t.text.link.url);
-    const plain = t.plain_text || '';
-    // Skip glossary inside code or links (avoid nested interactive elements).
-    let html = (a.code || href) ? escapeHtml(plain) : applyGlossaryToPlainText(plain);
-    if (a.code) html = `<code>${html}</code>`;
-    if (a.bold) html = `<strong>${html}</strong>`;
-    if (a.italic) html = `<em>${html}</em>`;
-    if (a.strikethrough) html = `<s>${html}</s>`;
-    if (a.underline) html = `<u>${html}</u>`;
-    if (a.color && a.color !== 'default') {
-      if (a.color.endsWith('_background')) {
-        const name = a.color.replace('_background', '');
-        html = `<span class="nb-hl nb-hl--${escapeHtml(name)}">${html}</span>`;
-      } else if (NOTION_COLORS[a.color]) {
-        html = `<span style="color:${notionHex(a.color)}">${html}</span>`;
-      }
-    }
-    if (href) {
-      const internal = internalCalcRoute(href);
-      if (internal) {
-        html = `<a href="${escapeHtml(href)}" data-calc-link="${internal}">${html}</a>`;
-      } else {
-        html = `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${html}</a>`;
-      }
-    }
-    return html;
-  }).join('');
+  const parts = arr.map(richTextItemInner);
+  let out = '';
+  let i = 0;
+  while (i < parts.length) {
+    const hl = parts[i].highlight;
+    if (!hl) { out += parts[i].html; i++; continue; }
+    let j = i + 1;
+    while (j < parts.length && parts[j].highlight === hl) j++;
+    out += `<span class="nb-hl nb-hl--${escapeHtml(hl)}">${parts.slice(i, j).map((p) => p.html).join('')}</span>`;
+    i = j;
+  }
+  return out;
 }
 
 /** App InternalLinkContext routes: /dca-sim, /pos-calc (optionally absolute). */
