@@ -5015,7 +5015,9 @@ function richText(arr) {
     else if (/[.,;:!?…('"“‘\[\{]\s*$/.test(beforeText)) endCls += ' nb-hl--lead';
     if (!/\S/.test(restText)) endCls += ' nb-hl--end';
     else if (/^[\s]*[.,;:!?…)'"”’\]\}]/.test(restText)) endCls += ' nb-hl--punct';
-    out += `<span class="nb-hl nb-hl--${escapeHtml(hl)}${endCls}">${parts.slice(i, j).map((p) => p.html).join('')}</span>`;
+    let inner = parts.slice(i, j).map((p) => p.html).join('');
+    inner = inner.replace(/^(\s*)([^<\s]{1,2})( )/, '$1$2\u00A0');
+    out += `<span class="nb-hl nb-hl--${escapeHtml(hl)}${endCls}">${inner}</span>`;
     i = j;
   }
   return out;

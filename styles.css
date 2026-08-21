@@ -1607,7 +1607,7 @@ body.modal-open {
   display: inline;
   position: relative;
   z-index: -1;
-  padding: 0.08em var(--hl-cap-r) 0.1em var(--hl-cap-l);
+  padding: 0.4em var(--hl-cap-r) 0.65em var(--hl-cap-l);
   margin: 0 calc(-1 * var(--hl-cap-r)) 0 calc(-1 * var(--hl-cap-l));
   color: var(--hl-text);
   -webkit-text-fill-color: var(--hl-text);
