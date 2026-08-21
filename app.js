@@ -4967,9 +4967,8 @@ function richText(arr) {
     if (a.underline) html = `<u>${html}</u>`;
     if (a.color && a.color !== 'default') {
       if (a.color.endsWith('_background')) {
-        // Solid, like the app — a translucent wash of the text colour is a different colour.
-        const bg = notionBgHex(a.color.replace('_background', ''));
-        html = `<span style="background:${bg};padding:0 2px;border-radius:3px">${html}</span>`;
+        const name = a.color.replace('_background', '');
+        html = `<span class="nb-hl nb-hl--${escapeHtml(name)}">${html}</span>`;
       } else if (NOTION_COLORS[a.color]) {
         html = `<span style="color:${notionHex(a.color)}">${html}</span>`;
       }

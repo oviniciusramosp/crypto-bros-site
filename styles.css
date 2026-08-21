@@ -67,6 +67,35 @@
   --space-md: 16px;
   --space-lg: 20px;
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Inline highlight brush (Threads marker). Dark defaults. */
+  --hl-gray-bg: #2F3337;
+  --hl-gray-pressure: #3E454C;
+  --hl-gray-text: #C0C7CE;
+  --hl-brown-bg: #472E1C;
+  --hl-brown-pressure: #613C21;
+  --hl-brown-text: #DFB090;
+  --hl-orange-bg: #58200B;
+  --hl-orange-pressure: #7B2607;
+  --hl-orange-text: #FF966F;
+  --hl-yellow-bg: #58510B;
+  --hl-yellow-pressure: #7B6D07;
+  --hl-yellow-text: #FFF86F;
+  --hl-green-bg: #0B5827;
+  --hl-green-pressure: #077B32;
+  --hl-green-text: #6FFFA4;
+  --hl-blue-bg: #113752;
+  --hl-blue-pressure: #104972;
+  --hl-blue-text: #7AC1F4;
+  --hl-purple-bg: #38174C;
+  --hl-purple-pressure: #4A186A;
+  --hl-purple-text: #C385E9;
+  --hl-pink-bg: #4E1531;
+  --hl-pink-pressure: #6D1641;
+  --hl-pink-text: #ED81B7;
+  --hl-red-bg: #580B0B;
+  --hl-red-pressure: #7B0707;
+  --hl-red-text: #FF6F6F;
 }
 
 :root[data-theme='light'] {
@@ -94,6 +123,34 @@
   --bookmark-bg: rgba(0, 0, 0, 0.03);
   /* Stronger than --bg-tertiary so the pulse (→ opacity 0.5) still reads on --surface. */
   --skeleton: #D4D4D8;
+
+  --hl-gray-bg: #A7ADB4;
+  --hl-gray-pressure: #6E7A87;
+  --hl-gray-text: #14191F;
+  --hl-brown-bg: #D39C75;
+  --hl-brown-pressure: #B96D36;
+  --hl-brown-text: #201309;
+  --hl-orange-bg: #FB956F;
+  --hl-orange-pressure: #F15B24;
+  --hl-orange-text: #2A0B00;
+  --hl-yellow-bg: #FAEA4E;
+  --hl-yellow-pressure: #EFD900;
+  --hl-yellow-text: #002A06;
+  --hl-green-bg: #4EFA8D;
+  --hl-green-pressure: #22C55E;
+  --hl-green-text: #002A0F;
+  --hl-blue-bg: #5BB0ED;
+  --hl-blue-pressure: #1289DD;
+  --hl-blue-text: #031827;
+  --hl-purple-bg: #B268E0;
+  --hl-purple-pressure: #8B24CB;
+  --hl-purple-text: #180624;
+  --hl-pink-bg: #E463A4;
+  --hl-pink-pressure: #D11E78;
+  --hl-pink-text: #250515;
+  --hl-red-bg: #F87777;
+  --hl-red-pressure: #EF4444;
+  --hl-red-text: #2A0000;
 }
 
 /* The app's own icon font (assets/fonts/cryptobros-icons.ttf, generated with IcoMoon).
@@ -1532,6 +1589,33 @@ body.modal-open {
 .card__preview .nb-price__icon { cursor: default; }
 
 /* Notion block elements (shared by card preview + modal content) */
+/* Threads-style marker brush for inline Notion highlights. */
+.nb-hl {
+  padding: 0.02em 0.32em;
+  margin: 0 -0.08em;
+  color: var(--hl-text);
+  -webkit-text-fill-color: var(--hl-text);
+  background-color: var(--hl-bg);
+  background-image: linear-gradient(90deg, transparent 86%, var(--hl-pressure) 100%);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 132 18' preserveAspectRatio='none'%3E%3Cpath fill='%23fff' d='M0.82 16.55C2.12 17.76 14.05 16.5 20.67 16.47C27.28 16.44 33.9 16.42 40.51 16.39C44.23 16.36 121.19 16.36 124.91 16.35C126.41 16.35 127.39 15.49 127.67 14.78C128.23 12.34 128.73 11.44 129.13 9.7C129.54 7.95 129.97 6.05 130.2 4.08C130.22 3.96 130.26 3.65 130.3 3.3C130.38 2.45 129.64 1.82 128.73 1.78C112.98 1.2 41.65 1.27 35.41 1.3C28.8 1.32 22.18 1.35 15.57 1.38C11.85 1.39 5.73 0.99 3.82 1.9C2.73 2.42 2.59 4.49 2.32 5.21C1.76 6.7 1.73 7.26 1.32 9C0.92 10.75 1.32 10.42 0.82 12.32C0.44 13.77 -0.68 15.16 0.82 16.55Z'/%3E%3C/svg%3E");
+  -webkit-mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 132 18' preserveAspectRatio='none'%3E%3Cpath fill='%23fff' d='M0.82 16.55C2.12 17.76 14.05 16.5 20.67 16.47C27.28 16.44 33.9 16.42 40.51 16.39C44.23 16.36 121.19 16.36 124.91 16.35C126.41 16.35 127.39 15.49 127.67 14.78C128.23 12.34 128.73 11.44 129.13 9.7C129.54 7.95 129.97 6.05 130.2 4.08C130.22 3.96 130.26 3.65 130.3 3.3C130.38 2.45 129.64 1.82 128.73 1.78C112.98 1.2 41.65 1.27 35.41 1.3C28.8 1.32 22.18 1.35 15.57 1.38C11.85 1.39 5.73 0.99 3.82 1.9C2.73 2.42 2.59 4.49 2.32 5.21C1.76 6.7 1.73 7.26 1.32 9C0.92 10.75 1.32 10.42 0.82 12.32C0.44 13.77 -0.68 15.16 0.82 16.55Z'/%3E%3C/svg%3E");
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+}
+.nb-hl--gray { --hl-bg: var(--hl-gray-bg); --hl-pressure: var(--hl-gray-pressure); --hl-text: var(--hl-gray-text); }
+.nb-hl--brown { --hl-bg: var(--hl-brown-bg); --hl-pressure: var(--hl-brown-pressure); --hl-text: var(--hl-brown-text); }
+.nb-hl--orange { --hl-bg: var(--hl-orange-bg); --hl-pressure: var(--hl-orange-pressure); --hl-text: var(--hl-orange-text); }
+.nb-hl--yellow { --hl-bg: var(--hl-yellow-bg); --hl-pressure: var(--hl-yellow-pressure); --hl-text: var(--hl-yellow-text); }
+.nb-hl--green { --hl-bg: var(--hl-green-bg); --hl-pressure: var(--hl-green-pressure); --hl-text: var(--hl-green-text); }
+.nb-hl--blue { --hl-bg: var(--hl-blue-bg); --hl-pressure: var(--hl-blue-pressure); --hl-text: var(--hl-blue-text); }
+.nb-hl--purple { --hl-bg: var(--hl-purple-bg); --hl-pressure: var(--hl-purple-pressure); --hl-text: var(--hl-purple-text); }
+.nb-hl--pink { --hl-bg: var(--hl-pink-bg); --hl-pressure: var(--hl-pink-pressure); --hl-text: var(--hl-pink-text); }
+.nb-hl--red { --hl-bg: var(--hl-red-bg); --hl-pressure: var(--hl-red-pressure); --hl-text: var(--hl-red-text); }
+
 .nb-hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 .nb-figure { margin: 12px 0; }
 .nb-figure img,
