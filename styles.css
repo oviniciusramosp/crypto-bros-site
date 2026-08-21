@@ -126,31 +126,31 @@
 
   --hl-gray-bg: #A7ADB4;
   --hl-gray-pressure: #6E7A87;
-  --hl-gray-text: #14191F;
+  --hl-gray-text: #4b5458;
   --hl-brown-bg: #D39C75;
   --hl-brown-pressure: #B96D36;
-  --hl-brown-text: #201309;
+  --hl-brown-text: #77392c;
   --hl-orange-bg: #FB956F;
   --hl-orange-pressure: #F15B24;
-  --hl-orange-text: #2A0B00;
+  --hl-orange-text: #9a0e09;
   --hl-yellow-bg: #FAEA4E;
   --hl-yellow-pressure: #EFD900;
-  --hl-yellow-text: #2A2200;
+  --hl-yellow-text: #9a6a09;
   --hl-green-bg: #4EFA8D;
   --hl-green-pressure: #22C55E;
-  --hl-green-text: #002A0F;
+  --hl-green-text: #099a1c;
   --hl-blue-bg: #5BB0ED;
   --hl-blue-pressure: #1289DD;
-  --hl-blue-text: #031827;
+  --hl-blue-text: #15798f;
   --hl-purple-bg: #B268E0;
   --hl-purple-pressure: #8B24CB;
-  --hl-purple-text: #180624;
+  --hl-purple-text: #462083;
   --hl-pink-bg: #E463A4;
   --hl-pink-pressure: #D11E78;
-  --hl-pink-text: #250515;
+  --hl-pink-text: #871d6b;
   --hl-red-bg: #F87777;
   --hl-red-pressure: #EF4444;
-  --hl-red-text: #2A0000;
+  --hl-red-text: #970c2d;
 }
 
 /* The app's own icon font (assets/fonts/cryptobros-icons.ttf, generated with IcoMoon).
