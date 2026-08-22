@@ -825,6 +825,9 @@ const SYMBOL_TO_COINGECKO = Object.assign(
   Object.fromEntries(MARKET_COINS.map((c) => [c.sym, c.id])),
   { GOLD: 'pax-gold', SILVER: 'kinesis-silver' },
 );
+const COINGECKO_TO_SYMBOL = Object.fromEntries(
+  Object.entries(SYMBOL_TO_COINGECKO).map(([sym, id]) => [id, sym]),
+);
 /** Per-coin chart accent (app COIN_COLORS). BTC falls back to theme accent. */
 const COIN_COLORS = {
   ethereum: '#8B5CF6', cardano: '#8B5CF6', solana: '#8B5CF6',
@@ -1153,12 +1156,74 @@ function normalizeToMidnightUTC(timestamp) {
   return Math.floor(timestamp / ONE_DAY_MS) * ONE_DAY_MS;
 }
 
+function isMidnightUTC(timestamp) {
+  return timestamp === normalizeToMidnightUTC(timestamp);
+}
+
+/** CoinGecko daily stamp at 00:00 UTC of D is the close of D-1. */
+function alignDailyClosesToSession(points) {
+  const byDay = new Map();
+  for (const p of points || []) {
+    if (!isFinite(p.t) || !isFinite(p.c)) continue;
+    const midnight = normalizeToMidnightUTC(p.t);
+    const t = isMidnightUTC(p.t) ? midnight - ONE_DAY_MS : midnight;
+    if (t <= 0) continue;
+    const prev = byDay.get(t);
+    if (!prev || p.t >= prev._srcT) byDay.set(t, { t, c: p.c, _srcT: p.t });
+  }
+  return Array.from(byDay.values()).map(({ t, c }) => ({ t, c })).sort((a, b) => a.t - b.t);
+}
+
+function closesFromOhlc(ohlc) {
+  return (ohlc || []).filter((p) => isFinite(p.t) && isFinite(p.c))
+    .map((p) => ({ t: normalizeToMidnightUTC(p.t), c: p.c }));
+}
+
+function patchOhlcCloses(ohlc, daily) {
+  const closeByDay = new Map();
+  for (const p of daily || []) {
+    if (isFinite(p.t) && isFinite(p.c)) closeByDay.set(normalizeToMidnightUTC(p.t), p.c);
+  }
+  return (ohlc || []).map((bar) => {
+    const c = closeByDay.get(normalizeToMidnightUTC(bar.t));
+    if (c == null) return bar;
+    return { ...bar, c, h: Math.max(bar.h, bar.o, c), l: Math.min(bar.l, bar.o, c) };
+  });
+}
+
+function mergeSessionDaily(ohlc, rawDaily, exchangeOhlc) {
+  return mergeAndDedup(
+    mergeAndDedup(closesFromOhlc(ohlc), alignDailyClosesToSession(rawDaily)),
+    closesFromOhlc(exchangeOhlc),
+  );
+}
+
 /** Merge two series, dedup by UTC day (overlay wins) — app chartDataService.mergeAndDedup. */
 function mergeAndDedup(base, overlay) {
   const byDay = new Map();
   for (const p of base || []) byDay.set(normalizeToMidnightUTC(p.t), p);
   for (const p of overlay || []) byDay.set(normalizeToMidnightUTC(p.t), p);
   return Array.from(byDay.values()).sort((a, b) => a.t - b.t);
+}
+
+async function fetchSessionOhlc(coinId, startMs, endMs) {
+  const sym = COINGECKO_TO_SYMBOL[coinId];
+  if (!sym) return [];
+  const path = `/candles?symbol=${encodeURIComponent(sym)}` +
+    `&interval=1d&from=${startMs}&to=${endMs + 1}`;
+  try {
+    const session = getSession();
+    const res = session
+      ? await authFetch(path)
+      : await fetch(`${CONFIG.workerBase}${path}`);
+    if (!res || !res.ok) return [];
+    const json = await res.json();
+    return (json.candles || []).map((row) => ({
+      t: row[0], o: row[1], h: row[2], l: row[3], c: row[4],
+    })).filter((c) => isFinite(c.t) && isFinite(c.c));
+  } catch (e) {
+    return [];
+  }
 }
 
 function filterToLastNDays(points, days) {
@@ -1238,6 +1303,20 @@ function deltaPointsForCoin(delta, coinId) {
   return daily.map((d) => ({ t: d.t, c: d.c })).filter((p) => isFinite(p.t) && isFinite(p.c));
 }
 
+function deltaOhlcForCoin(delta, coinId) {
+  const coin = delta && delta.coins && delta.coins[coinId];
+  if (!coin) return [];
+  const ohlc = coin.ohlc || [];
+  if (!ohlc.length) return [];
+  return ohlc.map((d) => ({
+    t: d.t,
+    o: isFinite(d.o) ? d.o : d.c,
+    h: isFinite(d.h) ? d.h : d.c,
+    l: isFinite(d.l) ? d.l : d.c,
+    c: d.c,
+  })).filter((p) => isFinite(p.t) && isFinite(p.c));
+}
+
 /** Layer 3: CoinGecko gap-fill — same endpoint as app fetchGapFromApi. */
 async function fetchGapFromApi(coinId, gapDays) {
   const fetchDays = Math.min(gapDays + 1, CHART_GAP_MAX_DAYS);
@@ -1299,23 +1378,26 @@ async function getLayeredChartData(coinId, days) {
   const bundledPoints = bundled.points || [];
   const delta = await getChartDelta();
   const deltaPts = deltaPointsForCoin(delta, coinId);
-  let localPoints = mergeAndDedup(bundledPoints, deltaPts);
+  let rawDaily = mergeAndDedup(bundledPoints, deltaPts);
+  const ohlc = (bundled.ohlc || []).concat(deltaOhlcForCoin(delta, coinId));
 
-  const lastKnownTs = localPoints.length ? localPoints[localPoints.length - 1].t : 0;
+  const lastKnownTs = rawDaily.length ? rawDaily[rawDaily.length - 1].t : 0;
   const gapDays = Math.ceil((Date.now() - lastKnownTs) / ONE_DAY_MS);
 
   // Layer 3: only if missing more than 1 day (app chartDataService)
   if (gapDays > 1) {
     try {
       const fresh = await fetchGapFromApi(coinId, gapDays);
-      localPoints = mergeAndDedup(localPoints, fresh);
+      rawDaily = mergeAndDedup(rawDaily, fresh);
     } catch (e) {
-      if (!localPoints.length) throw e;
+      if (!rawDaily.length && !ohlc.length) throw e;
       // keep local on API failure / rate limit
     }
   }
 
-  const points = filterToLastNDays(localPoints, days);
+  const now = Date.now();
+  const exchange = await fetchSessionOhlc(coinId, now - days * ONE_DAY_MS, now);
+  const points = filterToLastNDays(mergeSessionDaily(ohlc, rawDaily, exchange), days);
   if (points.length < 2) throw new Error('empty chart');
   chartCache[key] = { points, fetchedAt: Date.now() };
   // Alias coinId for modal quick lookup of the longest series we have
@@ -1333,13 +1415,25 @@ async function getFrozenChartData(coinId, days, endDate) {
   const cached = chartCache[key];
   if (cached && Date.now() - cached.fetchedAt < CHART_CACHE_TTL) return cached.points;
 
-  const endMs = new Date(endDate + 'T00:00:00Z').getTime() + ONE_DAY_MS - 1;
-  const startMs = endMs - days * ONE_DAY_MS;
+  const endDay = new Date(endDate + 'T00:00:00Z').getTime();
+  const fetchEndMs = endDay + ONE_DAY_MS;
+  const startMs = endDay - days * ONE_DAY_MS;
 
   const bundled = await loadBundledChart(coinId);
   const delta = await getChartDelta();
-  let local = mergeAndDedup(bundled.points || [], deltaPointsForCoin(delta, coinId));
-  local = local.filter((p) => p.t >= startMs && p.t <= endMs);
+  let rawDaily = mergeAndDedup(bundled.points || [], deltaPointsForCoin(delta, coinId));
+  const ohlc = (bundled.ohlc || []).concat(deltaOhlcForCoin(delta, coinId));
+  const lastTs = rawDaily.length ? rawDaily[rawDaily.length - 1].t : 0;
+  if (lastTs < fetchEndMs) {
+    try {
+      const gapDays = Math.max(2, Math.ceil((Date.now() - lastTs) / ONE_DAY_MS) + 1);
+      const fresh = await fetchGapFromApi(coinId, gapDays);
+      rawDaily = mergeAndDedup(rawDaily, fresh.filter((p) => p.t <= fetchEndMs));
+    } catch (e) { /* keep local */ }
+  }
+  const exchange = await fetchSessionOhlc(coinId, startMs, endDay);
+  let local = mergeSessionDaily(ohlc, rawDaily, exchange)
+    .filter((p) => p.t >= startMs && p.t <= endDay);
 
   if (local.length >= 2) {
     chartCache[key] = { points: local, fetchedAt: Date.now() };
@@ -1348,15 +1442,16 @@ async function getFrozenChartData(coinId, days, endDate) {
 
   // Fall back to CoinGecko range (app useBtcOhlc frozen path)
   const url = `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart/range` +
-    `?vs_currency=usd&from=${Math.floor(startMs / 1000)}&to=${Math.floor(endMs / 1000)}`;
+    `?vs_currency=usd&from=${Math.floor(startMs / 1000)}&to=${Math.floor(fetchEndMs / 1000)}`;
   const res = await fetch(url);
   if (res.status === 429) throw new Error('rate_limit');
   if (!res.ok) throw new Error(`chart ${res.status}`);
   const json = await res.json();
-  const points = (json.prices || [])
-    .map(([t, c]) => ({ t, c }))
-    .filter((p) => isFinite(p.t) && isFinite(p.c) && p.t >= startMs && p.t <= endMs)
-    .sort((a, b) => a.t - b.t);
+  const points = alignDailyClosesToSession(
+    (json.prices || [])
+      .map(([t, c]) => ({ t, c }))
+      .filter((p) => isFinite(p.t) && isFinite(p.c) && p.t <= fetchEndMs),
+  ).filter((p) => p.t >= startMs && p.t <= endDay);
   if (points.length < 2) throw new Error('empty chart');
   chartCache[key] = { points, fetchedAt: Date.now() };
   return points;
@@ -2160,6 +2255,21 @@ async function loadCandleSeries(params, coinId, days) {
     ohlc = pts.map((p) => ({ t: p.t, o: p.c, h: p.c, l: p.c, c: p.c }));
   } else {
     ohlc = sliceOhlc(ohlc, Math.max(days, 30), endDate);
+    const endMs = endDate
+      ? new Date(endDate + 'T00:00:00Z').getTime()
+      : Date.now();
+    const startMs = ohlc.length ? ohlc[0].t : endMs - days * ONE_DAY_MS;
+    const exchange = await fetchSessionOhlc(coinId, startMs, endMs);
+    if (exchange.length) {
+      const daily = mergeSessionDaily(ohlc, [], exchange);
+      ohlc = patchOhlcCloses(ohlc, daily);
+      const byDay = new Map(ohlc.map((c) => [normalizeToMidnightUTC(c.t), c]));
+      for (const c of exchange) {
+        const t = normalizeToMidnightUTC(c.t);
+        if (!endDate || t <= endMs) byDay.set(t, { ...c, t });
+      }
+      ohlc = Array.from(byDay.values()).sort((a, b) => a.t - b.t);
+    }
   }
   return applyCandleGrouping(ohlc, params.candleInterval, days);
 }
