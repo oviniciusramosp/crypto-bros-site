@@ -95,6 +95,9 @@ function resolveTheme(pref) {
 }
 function applyTheme() {
   document.documentElement.setAttribute('data-theme', resolveTheme(themePref()));
+  requestAnimationFrame(() => {
+    document.querySelectorAll('.card__preview, .modal__content').forEach(paintHighlightBrushes);
+  });
 }
 function repaintOpenCalculators() {
   // DCA avg-line color flips black/white with theme (app DCAChart isOrangePrice).
@@ -5184,10 +5187,149 @@ function richText(arr) {
     else if (/^[\s]*[.,;:!?…)'"”’\]\}]/.test(restText)) endCls += ' nb-hl--punct';
     let inner = parts.slice(i, j).map((p) => p.html).join('');
     inner = inner.replace(/^(\s*)([^<\s]{1,2})( )/, '$1$2\u00A0');
+    const visible = String(inner).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    if (visible && !/\s/.test(visible)) endCls += ' nb-hl--short';
     out += `<span class="nb-hl nb-hl--${escapeHtml(hl)}${endCls}">${inner}</span>`;
     i = j;
   }
   return out;
+}
+
+// ── Threads highlight brush (SVG per line box — Safari cannot fill border-image) ──
+const HL_BRUSH_H = 18;
+const HL_STRETCH_MIN = 60;
+const HL_NS = 'http://www.w3.org/2000/svg';
+let hlMaskSeq = 0;
+const hlObserved = new WeakMap();
+
+function hlBrushFillPath(w) {
+  const W = Math.max(w, HL_STRETCH_MIN);
+  return [
+    'M0.82 16.55',
+    'C2.12 17.76 14.05 16.5 20.67 16.47',
+    'C27.28 16.44 33.9 16.42 40.51 16.39',
+    `C44.23 16.36 ${(W - 10.81).toFixed(2)} 16.36 ${(W - 7.09).toFixed(2)} 16.35`,
+    `C${(W - 5.59).toFixed(2)} 16.35 ${(W - 4.61).toFixed(2)} 15.49 ${(W - 4.33).toFixed(2)} 14.78`,
+    `C${(W - 3.77).toFixed(2)} 12.34 ${(W - 3.27).toFixed(2)} 11.44 ${(W - 2.87).toFixed(2)} 9.7`,
+    `C${(W - 2.46).toFixed(2)} 7.95 ${(W - 2.03).toFixed(2)} 6.05 ${(W - 1.8).toFixed(2)} 4.08`,
+    `C${(W - 1.78).toFixed(2)} 3.96 ${(W - 1.74).toFixed(2)} 3.65 ${(W - 1.7).toFixed(2)} 3.3`,
+    `C${(W - 1.62).toFixed(2)} 2.45 ${(W - 2.36).toFixed(2)} 1.82 ${(W - 3.27).toFixed(2)} 1.78`,
+    `C${(W - 19.02).toFixed(2)} 1.2 41.65 1.27 35.41 1.3`,
+    'C28.8 1.32 22.18 1.35 15.57 1.38',
+    'C11.85 1.39 5.73 0.99 3.82 1.9',
+    'C2.73 2.42 2.59 4.49 2.32 5.21',
+    'C1.76 6.7 1.73 7.26 1.32 9',
+    'C0.92 10.75 1.32 10.42 0.82 12.32',
+    'C0.44 13.77 -0.68 15.16 0.82 16.55',
+    'Z',
+  ].join('');
+}
+
+function hlPressureMaskPath(w) {
+  const W = Math.max(w, HL_STRETCH_MIN);
+  const x = (n) => (W - (201 - n)).toFixed(3);
+  return [
+    `M${x(192.344)} 6.763`,
+    `L${x(193.769)} 3.252`,
+    `C${x(194.117)} 2.395 ${x(194.861)} 1.737 ${x(195.788)} 1.467`,
+    `C${x(197.066)} 0.803 ${x(201.73)} 2.679 ${x(201.815)} 4.897`,
+    `L${x(199.862)} 14.413`,
+    `C${x(199.547)} 15.946 ${x(198.13)} 17.053 ${x(196.481)} 17.053`,
+    `C${x(195.537)} 17.053 ${x(194.745)} 16.377 ${x(192.646)} 15.488`,
+    `L${x(191.973)} 9.427`,
+    `C${x(191.873)} 8.524 ${x(192)} 7.611 ${x(192.344)} 6.763`,
+    'Z',
+  ].join('');
+}
+
+function hlMakeBrushSvg(width, bg, pressure) {
+  const viewW = Math.max(width, HL_STRETCH_MIN);
+  const id = `nb-hl-m-${(hlMaskSeq += 1)}`;
+  const svg = document.createElementNS(HL_NS, 'svg');
+  svg.setAttribute('xmlns', HL_NS);
+  svg.setAttribute('class', 'nb-hl-svg');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('viewBox', `0 0 ${viewW} ${HL_BRUSH_H}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('aria-hidden', 'true');
+  const fillD = hlBrushFillPath(viewW);
+  const base = document.createElementNS(HL_NS, 'path');
+  base.setAttribute('d', fillD);
+  base.setAttribute('fill', bg);
+  svg.appendChild(base);
+  const mask = document.createElementNS(HL_NS, 'mask');
+  mask.setAttribute('id', id);
+  mask.setAttribute('maskUnits', 'userSpaceOnUse');
+  const mp = document.createElementNS(HL_NS, 'path');
+  mp.setAttribute('d', hlPressureMaskPath(viewW));
+  mp.setAttribute('fill', '#D9D9D9');
+  mask.appendChild(mp);
+  svg.appendChild(mask);
+  const g = document.createElementNS(HL_NS, 'g');
+  g.setAttribute('mask', `url(#${id})`);
+  const press = document.createElementNS(HL_NS, 'path');
+  press.setAttribute('d', fillD);
+  press.setAttribute('fill', pressure);
+  g.appendChild(press);
+  svg.appendChild(g);
+  return svg;
+}
+
+function hlCapHang(span, side) {
+  if (side === 'l') return span.classList.contains('nb-hl--start') ? 14 : 4;
+  return span.classList.contains('nb-hl--end') ? 14 : 4;
+}
+
+function paintHighlightBrushes(root) {
+  if (!root || !root.querySelectorAll) return;
+  const spans = [...root.querySelectorAll('.nb-hl')].filter((el) => !el.closest('.nb-hl-layer'));
+  let layer = root.querySelector(':scope > .nb-hl-layer');
+  if (!spans.length) {
+    if (layer) layer.remove();
+    return;
+  }
+  if (!layer) {
+    layer = document.createElement('span');
+    layer.className = 'nb-hl-layer';
+    layer.setAttribute('aria-hidden', 'true');
+    root.insertBefore(layer, root.firstChild);
+  }
+  if (!hlObserved.has(root) && typeof ResizeObserver !== 'undefined') {
+    const ro = new ResizeObserver(() => paintHighlightBrushes(root));
+    ro.observe(root);
+    hlObserved.set(root, ro);
+  }
+  const hostRect = root.getBoundingClientRect();
+  const originX = hostRect.left + (root.clientLeft || 0) - (root.scrollLeft || 0);
+  const originY = hostRect.top + (root.clientTop || 0) - (root.scrollTop || 0);
+  const frag = document.createDocumentFragment();
+  spans.forEach((span) => {
+    const cs = getComputedStyle(span);
+    const bg = (cs.getPropertyValue('--hl-bg') || '#58510B').trim();
+    const pressure = (cs.getPropertyValue('--hl-pressure') || '#7B6D07').trim();
+    const hangL = hlCapHang(span, 'l');
+    const hangR = hlCapHang(span, 'r');
+    [...span.getClientRects()].filter((r) => r.width > 0.5 && r.height > 0.5).forEach((r) => {
+      const w = Math.max(r.width + hangL + hangR, 8);
+      const svg = hlMakeBrushSvg(w, bg, pressure);
+      svg.style.left = `${r.left - originX - hangL}px`;
+      svg.style.top = `${r.top - originY + (r.height - HL_BRUSH_H) / 2}px`;
+      svg.style.width = `${w}px`;
+      svg.style.height = `${HL_BRUSH_H}px`;
+      frag.appendChild(svg);
+    });
+  });
+  layer.replaceChildren(frag);
+}
+
+function hydrateHighlightBrushes(root) {
+  if (!root) return;
+  const hosts = root.matches && (root.matches('.card__preview, .modal__content'))
+    ? [root]
+    : [...root.querySelectorAll('.card__preview, .modal__content')];
+  const run = () => hosts.forEach(paintHighlightBrushes);
+  run();
+  requestAnimationFrame(run);
 }
 
 /** App InternalLinkContext routes: /dca-sim, /pos-calc (optionally absolute). */
@@ -5743,6 +5885,7 @@ function renderFeed() {
     hydrateBookmarks(list);
     hydrateLazyImages(list);
     hydrateWidgets(list);
+    hydrateHighlightBrushes(list);
   }
   renderHistory();
 }
@@ -6061,6 +6204,7 @@ function renderPostModal(post) {
   hydrateBookmarks(content);
   hydrateLazyImages(content);
   hydrateWidgets(content);
+  hydrateHighlightBrushes(content);
   maybeSuggestPostLanguage(post);
 }
 
@@ -6418,6 +6562,7 @@ function renderLessonModal(lesson) {
   hydrateBookmarks(content);
   hydrateLazyImages(content);
   hydrateWidgets(content);
+  hydrateHighlightBrushes(content);
 }
 
 /**
