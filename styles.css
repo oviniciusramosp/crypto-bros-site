@@ -1616,6 +1616,9 @@ body.modal-open {
   pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
+  /* Absolute + z-index:auto paints ABOVE in-flow glyphs. Host isolation
+     keeps -1 above the card fill. */
+  z-index: -1;
 }
 .nb-hl-svg {
   position: absolute;
