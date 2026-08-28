@@ -1525,6 +1525,38 @@ function interpolateAnchors(sparse) {
   return out;
 }
 
+function accumForField(field) {
+  if (field === 'l') return 'min';
+  if (field === 'h') return 'max';
+  if (field === 'o') return 'first';
+  return 'last';
+}
+
+function runningWeekSource(timestamps, values, accum) {
+  const n = timestamps.length;
+  const out = new Array(n);
+  if (!n) return out;
+  let key = getWeekKey(timestamps[0]);
+  let acc = values[0];
+  out[0] = acc;
+  for (let i = 1; i < n; i++) {
+    const k = getWeekKey(timestamps[i]);
+    const v = values[i];
+    if (k !== key) {
+      key = k;
+      acc = v;
+    } else if (accum === 'min') {
+      acc = Math.min(acc, v);
+    } else if (accum === 'max') {
+      acc = Math.max(acc, v);
+    } else if (accum !== 'first') {
+      acc = v;
+    }
+    out[i] = acc;
+  }
+  return out;
+}
+
 function ohlcFieldValue(point, field) {
   if (field === 'o') return point.o;
   if (field === 'h') return point.h;
@@ -1532,16 +1564,71 @@ function ohlcFieldValue(point, field) {
   return point.c;
 }
 
-function calculateWeeklyEmaFromValues(timestamps, values, period) {
-  if (!timestamps.length) return [];
+/** Weekly EMA as TradingView ta.ema on 1W, plotted daily (forming bar). */
+function calculateWeeklyEmaFromValues(timestamps, values, period, accum) {
+  const n = timestamps.length;
+  const out = new Array(n).fill(null);
+  if (!n || period < 1) return out;
+  accum = accum || 'last';
   const weekEndIndices = groupByCalendarWeek(timestamps);
-  const weeklyValues = weekEndIndices.map((i) => values[i]);
-  const weeklyEma = calculateEma(weeklyValues, period);
-  const daily = new Array(timestamps.length).fill(null);
-  for (let w = 0; w < weeklyEma.length; w++) {
-    if (weeklyEma[w] != null) daily[weekEndIndices[w]] = weeklyEma[w];
+  const running = runningWeekSource(timestamps, values, accum);
+  const weekEndSrc = weekEndIndices.map((i) => running[i]);
+  const k = 2 / (period + 1);
+  const seedN = period - 1;
+  let prevEma = null;
+  let rangeStart = 0;
+  for (let w = 0; w < weekEndIndices.length; w++) {
+    const end = weekEndIndices[w];
+    if (prevEma == null) {
+      if (w === seedN) {
+        let seedSum = 0;
+        for (let i = 0; i < seedN; i++) seedSum += weekEndSrc[i];
+        for (let i = rangeStart; i <= end; i++) out[i] = (seedSum + running[i]) / period;
+        prevEma = out[end];
+      }
+    } else {
+      for (let i = rangeStart; i <= end; i++) out[i] = (running[i] - prevEma) * k + prevEma;
+      prevEma = out[end];
+    }
+    rangeStart = end + 1;
   }
-  return interpolateAnchors(daily);
+  return out;
+}
+
+function projectWeeklyEmaFromAnchors(timestamps, values, period, bundledByWeek, accum) {
+  const n = timestamps.length;
+  const out = new Array(n).fill(null);
+  if (!n || period < 1) return out;
+  accum = accum || 'last';
+  const weekEndIndices = groupByCalendarWeek(timestamps);
+  const running = runningWeekSource(timestamps, values, accum);
+  const k = 2 / (period + 1);
+  const firstWk = getWeekKey(timestamps[0]);
+  let prevEma = null;
+  let bestWk = -Infinity;
+  bundledByWeek.forEach((v, wk) => {
+    if (wk < firstWk && wk > bestWk) {
+      bestWk = wk;
+      prevEma = v;
+    }
+  });
+  let rangeStart = 0;
+  for (let w = 0; w < weekEndIndices.length; w++) {
+    const end = weekEndIndices[w];
+    const thisWk = getWeekKey(timestamps[end]);
+    if (prevEma != null) {
+      for (let i = rangeStart; i <= end; i++) out[i] = (running[i] - prevEma) * k + prevEma;
+    }
+    const bundled = bundledByWeek.get(thisWk);
+    if (bundled !== undefined) {
+      prevEma = bundled;
+      if (out[end] == null) out[end] = bundled;
+    } else if (out[end] != null) {
+      prevEma = out[end];
+    }
+    rangeStart = end + 1;
+  }
+  return out;
 }
 
 function getBundledEmaKey(coinId, period, unit, field) {
@@ -1563,8 +1650,7 @@ function bundleBackedWeeklyEma(data, coinId, period, field, seriesKey, ohlc) {
     const srcTs = field === 'c' ? ts : (ohlc || []).map((d) => d.t);
     if (field !== 'c') {
       if (!srcTs.length) return data.map(() => null);
-      // Map OHLC-aligned weekly EMA onto close-series timestamps
-      const ohlcEma = calculateWeeklyEmaFromValues(srcTs, vals, period);
+      const ohlcEma = calculateWeeklyEmaFromValues(srcTs, vals, period, accumForField(field));
       const byTs = new Map();
       for (let i = 0; i < srcTs.length; i++) byTs.set(srcTs[i], ohlcEma[i]);
       return data.map((d) => (byTs.has(d.t) ? byTs.get(d.t) : null));
@@ -1578,7 +1664,6 @@ function bundleBackedWeeklyEma(data, coinId, period, field, seriesKey, ohlc) {
   for (let i = 0; i < weekTs.length; i++) {
     if (weekValues[i] != null) bundledByWeek.set(getWeekKey(weekTs[i]), weekValues[i]);
   }
-  // Overlay Worker delta weekly anchors when present
   const delta = chartDeltaCache && chartDeltaCache.data;
   const deltaEma = delta && delta.coins && delta.coins[coinId] && delta.coins[coinId].ema;
   if (deltaEma && deltaEma.week_t) {
@@ -1588,12 +1673,6 @@ function bundleBackedWeeklyEma(data, coinId, period, field, seriesKey, ohlc) {
         if (dv[i] != null) bundledByWeek.set(getWeekKey(deltaEma.week_t[i]), dv[i]);
       }
     }
-  }
-
-  let lastBundledWeek = -Infinity;
-  let lastBundledValue = null;
-  for (const [wk, v] of bundledByWeek) {
-    if (wk > lastBundledWeek) { lastBundledWeek = wk; lastBundledValue = v; }
   }
 
   let srcTs, srcVals;
@@ -1607,35 +1686,13 @@ function bundleBackedWeeklyEma(data, coinId, period, field, seriesKey, ohlc) {
     return data.map(() => null);
   }
 
-  const weekEndIndices = groupByCalendarWeek(srcTs);
-  const mult = 2 / (period + 1);
-  const anchorBySrcIdx = new Map();
-  let lastEma = lastBundledValue;
-  let lastEmaWeek = lastBundledWeek;
-  for (const idx of weekEndIndices) {
-    const wk = getWeekKey(srcTs[idx]);
-    const bundled = bundledByWeek.get(wk);
-    if (bundled !== undefined) {
-      anchorBySrcIdx.set(idx, bundled);
-      lastEma = bundled;
-      lastEmaWeek = wk;
-      continue;
-    }
-    if (lastEma == null || wk <= lastEmaWeek) continue;
-    const stepped = (srcVals[idx] - lastEma) * mult + lastEma;
-    anchorBySrcIdx.set(idx, stepped);
-    lastEma = stepped;
-    lastEmaWeek = wk;
-  }
-
-  const dataTsToIdx = new Map();
-  for (let i = 0; i < data.length; i++) dataTsToIdx.set(data[i].t, i);
-  const result = new Array(data.length).fill(null);
-  for (const [srcIdx, emaVal] of anchorBySrcIdx) {
-    const dataIdx = dataTsToIdx.get(srcTs[srcIdx]);
-    if (dataIdx !== undefined) result[dataIdx] = emaVal;
-  }
-  return interpolateAnchors(result);
+  const live = projectWeeklyEmaFromAnchors(
+    srcTs, srcVals, period, bundledByWeek, accumForField(field),
+  );
+  if (field === 'c') return live;
+  const byTs = new Map();
+  for (let i = 0; i < srcTs.length; i++) byTs.set(srcTs[i], live[i]);
+  return data.map((d) => (byTs.has(d.t) ? byTs.get(d.t) : null));
 }
 
 /** Compute EMA series aligned 1:1 with `data` ({t,c}[]). App computeEmaValues. */
@@ -1649,7 +1706,7 @@ function computeEmaValues(data, config, ohlc, coinId) {
     const ts = ohlc.map((d) => d.t);
     const vals = ohlc.map((d) => ohlcFieldValue(d, field));
     const series = config.unit === 'w'
-      ? calculateWeeklyEmaFromValues(ts, vals, config.period)
+      ? calculateWeeklyEmaFromValues(ts, vals, config.period, accumForField(field))
       : calculateEma(vals, config.period);
     const byTs = new Map();
     for (let i = 0; i < ts.length; i++) byTs.set(ts[i], series[i]);
