@@ -3421,15 +3421,21 @@ function parseEmaOverlays(emaStr) {
   const parts = String(emaStr || '').split(',').slice(0, 3);
   const overlays = [];
   for (const part of parts) {
-    const match = part.match(/^(\d+)([dw])-([a-z]+)(?:-([ohlc]))?$/i);
+    const match = part.trim().match(/^(\d+)([dw])(?:-([a-z]+))?(?:-([ohlc]))?$/i);
     if (!match) continue;
     const period = parseInt(match[1], 10);
     const unit = match[2].toLowerCase();
-    const colorName = match[3].toLowerCase();
+    let colorName = match[3] ? match[3].toLowerCase() : undefined;
+    let fieldRaw = match[4] ? match[4].toLowerCase() : undefined;
+    if (colorName && ['o', 'h', 'l', 'c'].includes(colorName) && !fieldRaw) {
+      fieldRaw = colorName;
+      colorName = undefined;
+    }
+    const periodDefault = { 50: 'green', 100: 'cyan', 200: 'blue', 250: 'orange', 450: 'red' };
+    if (!colorName) colorName = periodDefault[period] || 'blue';
     const color = EMA_COLORS[colorName];
     if (!color || period <= 0) continue;
-    const fieldRaw = match[4] ? match[4].toLowerCase() : undefined;
-    const field = fieldRaw && fieldRaw !== 'c' ? fieldRaw : undefined;
+    const field = fieldRaw && fieldRaw !== 'c' ? fieldRaw : ((period === 250 || period === 450) ? 'l' : undefined);
     overlays.push({ period, unit, colorName, color, ...(field ? { field } : {}) });
   }
   return overlays.length ? overlays : undefined;
