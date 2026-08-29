@@ -1567,45 +1567,29 @@ function ohlcFieldValue(point, field) {
   return point.c;
 }
 
-/** Weekly EMA as TradingView ta.ema on 1W, plotted daily (forming bar). */
+/** Weekly EMA like TradingView plot(ta.ema) on 1W — vertices at week-end, interpolated intra-week. */
 function calculateWeeklyEmaFromValues(timestamps, values, period, accum) {
   const n = timestamps.length;
-  const out = new Array(n).fill(null);
-  if (!n || period < 1) return out;
+  const sparse = new Array(n).fill(null);
+  if (!n || period < 1) return sparse;
   accum = accum || 'last';
   const weekEndIndices = groupByCalendarWeek(timestamps);
   const running = runningWeekSource(timestamps, values, accum);
-  const weekEndSrc = weekEndIndices.map((i) => running[i]);
-  const k = 2 / (period + 1);
-  const seedN = period - 1;
-  let prevEma = null;
-  let rangeStart = 0;
-  for (let w = 0; w < weekEndIndices.length; w++) {
-    const end = weekEndIndices[w];
-    if (prevEma == null) {
-      if (w === seedN) {
-        let seedSum = 0;
-        for (let i = 0; i < seedN; i++) seedSum += weekEndSrc[i];
-        for (let i = rangeStart; i <= end; i++) out[i] = (seedSum + running[i]) / period;
-        prevEma = out[end];
-      }
-    } else {
-      for (let i = rangeStart; i <= end; i++) out[i] = (running[i] - prevEma) * k + prevEma;
-      prevEma = out[end];
-    }
-    rangeStart = end + 1;
+  const weeklyEma = calculateEma(weekEndIndices.map((i) => running[i]), period);
+  for (let w = 0; w < weeklyEma.length; w++) {
+    if (weeklyEma[w] != null) sparse[weekEndIndices[w]] = weeklyEma[w];
   }
-  return out;
+  return interpolateAnchors(sparse);
 }
 
 function projectWeeklyEmaFromAnchors(timestamps, values, period, bundledByWeek, accum) {
   const n = timestamps.length;
-  const out = new Array(n).fill(null);
-  if (!n || period < 1) return out;
+  const sparse = new Array(n).fill(null);
+  if (!n || period < 1) return sparse;
   accum = accum || 'last';
   const weekEndIndices = groupByCalendarWeek(timestamps);
   const running = runningWeekSource(timestamps, values, accum);
-  const k = 2 / (period + 1);
+  const kMul = 2 / (period + 1);
   const firstWk = getWeekKey(timestamps[0]);
   let prevEma = null;
   let bestWk = -Infinity;
@@ -1615,23 +1599,25 @@ function projectWeeklyEmaFromAnchors(timestamps, values, period, bundledByWeek, 
       prevEma = v;
     }
   });
-  let rangeStart = 0;
+  const lastW = weekEndIndices.length - 1;
   for (let w = 0; w < weekEndIndices.length; w++) {
     const end = weekEndIndices[w];
     const thisWk = getWeekKey(timestamps[end]);
-    if (prevEma != null) {
-      for (let i = rangeStart; i <= end; i++) out[i] = (running[i] - prevEma) * k + prevEma;
-    }
     const bundled = bundledByWeek.get(thisWk);
-    if (bundled !== undefined) {
+    const isForming = w === lastW;
+    if (!isForming && bundled !== undefined) {
+      sparse[end] = bundled;
       prevEma = bundled;
-      if (out[end] == null) out[end] = bundled;
-    } else if (out[end] != null) {
-      prevEma = out[end];
+    } else if (prevEma != null) {
+      sparse[end] = (running[end] - prevEma) * kMul + prevEma;
+      if (!isForming && bundled !== undefined) prevEma = bundled;
+      else prevEma = sparse[end];
+    } else if (bundled !== undefined) {
+      sparse[end] = bundled;
+      prevEma = bundled;
     }
-    rangeStart = end + 1;
   }
-  return out;
+  return interpolateAnchors(sparse);
 }
 
 function getBundledEmaKey(coinId, period, unit, field) {
@@ -1847,13 +1833,17 @@ function buildChartGeometry(sliced, width, height, pad, opts) {
   const emaPaths = [];
   for (const series of emaValues) {
     const emaPts = [];
+    const weeklySmooth = series.overlay.unit === 'w';
     for (let i = 0; i < series.values.length; i++) {
-      if (series.values[i] != null) {
-        emaPts.push({
-          x: P.left + (i / (sliced.length - 1)) * chartW,
-          y: P.top + chartH - ((series.values[i] - paddedMin) / range) * chartH,
-        });
+      if (series.values[i] == null) continue;
+      if (weeklySmooth && i < series.values.length - 1
+          && getWeekKey(sliced[i].t) === getWeekKey(sliced[i + 1].t)) {
+        continue;
       }
+      emaPts.push({
+        x: P.left + (i / (sliced.length - 1)) * chartW,
+        y: P.top + chartH - ((series.values[i] - paddedMin) / range) * chartH,
+      });
     }
     if (emaPts.length >= 2) {
       emaPaths.push({ color: series.overlay.color, path: monotoneCubicPath(emaPts), overlay: series.overlay });
@@ -2663,13 +2653,17 @@ function paintCandleChart(host, tipEl, opts) {
       const byTs = new Map();
       for (let i = 0; i < full.length; i++) byTs.set(full[i].t, all[i]);
       const pts = [];
+      const weeklySmooth = overlay.unit === 'w';
       for (let i = 0; i < candles.length; i++) {
         const v = byTs.get(candles[i].t);
-        if (v != null) {
-          if (v < minP) minP = v;
-          if (v > maxP) maxP = v;
-          pts.push({ i, v });
+        if (v == null) continue;
+        if (v < minP) minP = v;
+        if (v > maxP) maxP = v;
+        if (weeklySmooth && i < candles.length - 1
+            && getWeekKey(candles[i].t) === getWeekKey(candles[i + 1].t)) {
+          continue;
         }
+        pts.push({ i, v });
       }
       // store for path after Y scale known
       emaPaths.push({ overlay, pts });
