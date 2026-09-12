@@ -1417,9 +1417,10 @@ body.modal-open {
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .modal__cover { width: 100%; aspect-ratio: 14 / 9; object-fit: cover; background: var(--bg-tertiary); display: block; cursor: default; }
 
-/* Progressive images — reserved frame forever (dashboard blink fix).
-   Decode must not change aspect-ratio, height, or fade the full layer in.
-   Thumb sits behind; full is always opacity 1 and paints when ready. */
+/* Progressive images — reserved frame (dashboard blink fix).
+   Covers stay 14/9 forever. Figures start 16/9; JS writes the natural
+   ratio on decode (app ImageBlock). Thumb sits behind; full is always
+   opacity 1 and paints when ready. */
 .lazy-img {
   position: relative;
   display: block;
@@ -1450,12 +1451,16 @@ body.modal-open {
   width: 100%;
   aspect-ratio: 14 / 9;
 }
-/* Content figures: 16/9 forever — never hug natural aspect on decode. */
+/* Content figures: 16/9 placeholder until JS sets the decoded ratio. */
 .nb-figure .lazy-img {
   width: 100%;
   border-radius: 10px;
   margin: 0;
   aspect-ratio: 16 / 9;
+  transition: aspect-ratio 250ms ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nb-figure .lazy-img { transition: none; }
 }
 .nb-figure .lazy-img__full,
 .nb-figure .lazy-img__thumb {
@@ -1986,11 +1991,15 @@ body.modal-open {
   padding: 16px; text-align: center;
 }
 
-/* ── Inline chart / price widgets in post & lesson body ─────────────── */
+/* ── Inline chart / price widgets in post & lesson body ───────────────
+   App ChartBlock uses a fixed plot height (200 / 150 / 100 / 75) in the
+   phone reading column (iPhone 14: 390 − 2×20 pad = 350; half = (350 − 8) / 2).
+   Lock that aspect-ratio here so a 640px web column does not flatten the plot. */
 .nb-chart {
   position: relative;
   width: 100%;
-  height: 200px;
+  height: auto;
+  aspect-ratio: 350 / 200;
   margin: 12px 0;
   border-radius: 12px;
   overflow: hidden;
@@ -2000,12 +2009,12 @@ body.modal-open {
   display: flex;
   flex-direction: column;
 }
-/* Half-size charts (app CHART_HEIGHT_HALF = 150) — height set inline + class */
-.nb-chart.nb-chart--half:not(.nb-chart--with-head):not(.nb-chart--rsi) { height: 150px; }
-.nb-chart.nb-chart--rsi:not(.nb-chart--with-head) { height: 100px; }
-.nb-chart.nb-chart--rsi.nb-chart--half:not(.nb-chart--with-head) { height: 75px; }
-/* With header, height is content-driven (head + fixed canvas) */
+.nb-chart.nb-chart--half:not(.nb-chart--rsi) { aspect-ratio: 171 / 150; }
+.nb-chart.nb-chart--rsi:not(.nb-chart--half) { aspect-ratio: 350 / 100; }
+.nb-chart.nb-chart--rsi.nb-chart--half { aspect-ratio: 171 / 75; }
+/* With header, the card hugs head + plot; the plot keeps the app ratio. */
 .nb-chart.nb-chart--with-head {
+  aspect-ratio: auto;
   height: auto;
   min-height: 0;
 }
@@ -2074,11 +2083,12 @@ body.modal-open {
   width: 100%;
   flex: 0 0 auto;
   min-height: 0;
+  aspect-ratio: 350 / 200;
+  height: auto;
 }
-.nb-chart:not(.nb-chart--with-head) .nb-chart__plot {
-  flex: 1 1 auto;
-  height: 100%;
-}
+.nb-chart--half:not(.nb-chart--rsi) .nb-chart__plot { aspect-ratio: 171 / 150; }
+.nb-chart--rsi:not(.nb-chart--half) .nb-chart__plot { aspect-ratio: 350 / 100; }
+.nb-chart--rsi.nb-chart--half .nb-chart__plot { aspect-ratio: 171 / 75; }
 .nb-chart__canvas {
   width: 100%;
   height: 100%;

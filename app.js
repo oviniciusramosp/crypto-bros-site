@@ -878,6 +878,10 @@ const CHART_PERIODS = [
 const CHART_HEIGHT = 200;
 const CHART_HEIGHT_INLINE = 200; // full-size line/candle/fng/cycle (app CHART_HEIGHT_FULL)
 const CHART_HEIGHT_HALF = 150;   // size:half for line/candle/fng/cycle
+// App ChartBlock plot is a fixed px height in the phone reading column
+// (iPhone 14: 390 − 2×20 pad = 350; half row = (350 − 8 gap) / 2). CSS
+// `.nb-chart__plot` uses these as aspect-ratio so a 640px web column does
+// not flatten the same 200px height.
 const RSI_HEIGHT_FULL = 100;
 const RSI_HEIGHT_HALF = 75;
 const CHART_PAD = { top: 16, right: 20, bottom: 16, left: 0 }; // DEFAULT_PADDING
@@ -3648,8 +3652,7 @@ function chartEmbedPlaceholder(params) {
   }
   const payload = escapeHtml(JSON.stringify(params));
   const heightClass = chartHeightClass(params);
-  const h = chartHeightFor(params);
-  return `<div class="nb-chart${heightClass}" data-nb-chart="${payload}" style="height:${h}px"` +
+  return `<div class="nb-chart${heightClass}" data-nb-chart="${payload}"` +
     ` role="img" aria-label="${escapeHtml(params.asset || 'chart')} ${escapeHtml(type)} chart">` +
     `<div class="nb-chart__sk"></div></div>`;
 }
@@ -3698,6 +3701,14 @@ function daysForChartParams(params) {
   return resolveTimeRangeDays(params.timeRange || '3m');
 }
 
+/** Laid-out plot height (aspect-ratio box). Falls back to the app token. */
+function inlineChartPlotHeight(el) {
+  const plot = (el && (el.querySelector('.nb-chart__plot') || el.querySelector('.nb-chart__canvas'))) || el;
+  const h = plot ? Math.round(plot.clientHeight) : 0;
+  if (h > 0) return h;
+  return (el && el._nbState && el._nbState.height) || CHART_HEIGHT_INLINE;
+}
+
 /** Paint (or re-paint) an inline Notion chart from its `_nbState`. */
 function paintInlineChart(el, opts) {
   const st = el && el._nbState;
@@ -3708,8 +3719,9 @@ function paintInlineChart(el, opts) {
   if (!canvas) return;
   const playEntrance = !!(opts && opts.playEntrance) && !st.scrub;
   const type = st.chartType || 'line';
+  const height = inlineChartPlotHeight(el);
   const common = {
-    height: st.height,
+    height,
     scrub: st.scrub,
     uid: st.uid,
     playEntrance,
@@ -3760,7 +3772,7 @@ function paintInlineChart(el, opts) {
       days: st.days,
       currentPrice: st.live ? st.currentPrice : null,
       accent: st.accent,
-      height: st.height,
+      height,
       pad: CHART_PAD_INLINE,
       scrub: st.scrub,
       uid: st.uid,
@@ -3841,16 +3853,36 @@ function wireInlineChartScrub(el) {
   });
 }
 
-function shellInlineChart(el, headHtml, canvasHeight) {
+function shellInlineChart(el, headHtml) {
   // Plot wrap owns absolute tip/legend so coords stay canvas-relative even with a header.
+  // Height comes from CSS aspect-ratio (app ChartBlock phone-column proportions).
   el.innerHTML =
     (headHtml || '') +
-    `<div class="nb-chart__plot" style="height:${canvasHeight || 200}px">` +
+    `<div class="nb-chart__plot">` +
       `<div class="nb-chart__canvas"></div>` +
       `<div class="nb-chart__legend" hidden></div>` +
       `<div class="mm__tooltip nb-chart__tip hidden"></div>` +
     `</div>`;
   wireInlineChartScrub(el);
+}
+
+/** Re-paint when the aspect-ratio box actually changes size (modal/column). */
+function wireInlineChartResize(el) {
+  if (!el || el._nbRoWired || typeof ResizeObserver === 'undefined') return;
+  el._nbRoWired = true;
+  const plot = el.querySelector('.nb-chart__plot') || el;
+  let lastW = 0;
+  let lastH = 0;
+  const ro = new ResizeObserver(() => {
+    const w = plot.clientWidth;
+    const h = plot.clientHeight;
+    if (w < 40 || h < 40) return;
+    if (w === lastW && h === lastH) return;
+    lastW = w;
+    lastH = h;
+    paintInlineChart(el, { playEntrance: false });
+  });
+  ro.observe(plot);
 }
 
 async function mountInlineChart(el) {
@@ -4024,11 +4056,12 @@ async function mountInlineChart(el) {
     const headHtml = buildChartHeadHtml(params, days, percentChange, sinceDateStr);
     el.style.height = '';
     el.classList.add('nb-chart--with-head');
-    shellInlineChart(el, headHtml, height);
+    shellInlineChart(el, headHtml);
 
     requestAnimationFrame(() => {
       if (!el.isConnected) return;
       paintInlineChart(el, { playEntrance: true });
+      wireInlineChartResize(el);
     });
   } catch (e) {
     if (!el.isConnected) return;
@@ -5406,18 +5439,75 @@ function progressiveImgAttrs(src, opts) {
   return { full, thumb };
 }
 
-/** Hide the blur thumb after the full layer has painted. Never mutates layout. */
+/**
+ * Figures adopt the decoded image's natural ratio (app ImageBlock.tsx).
+ * Covers stay 14/9 — do not write inline aspect-ratio on those slots.
+ */
+function applyFigureAspect(wrap, img) {
+  if (!wrap || !img) return;
+  if (wrap.classList.contains('card__cover') || wrap.classList.contains('modal__cover')) return;
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  if (!w || !h) return;
+  wrap.style.aspectRatio = `${w} / ${h}`;
+}
+
+/** Run `fn` once the img has intrinsic size. load can miss on lazy/cached images. */
+function whenImgReady(img, fn) {
+  if (!img) return;
+  let done = false;
+  const run = () => {
+    if (done || !img.naturalWidth || !img.naturalHeight) return;
+    done = true;
+    fn(img);
+  };
+  img.addEventListener('load', run);
+  img.addEventListener('error', () => { done = true; }, { once: true });
+  if (img.complete) run();
+  if (typeof img.decode === 'function') {
+    img.decode().then(run).catch(() => {});
+  }
+}
+
+function onProgressiveImgPainted(img) {
+  const wrap = img && img.closest && img.closest('.lazy-img');
+  if (!wrap) return;
+  applyFigureAspect(wrap, img);
+  if (img.classList.contains('lazy-img__full')) wrap.classList.add('is-loaded');
+}
+
+// Capture-phase: innerHTML-inserted imgs can decode from cache during parse,
+// before hydrateLazyImages attaches per-node listeners. load does not bubble.
+document.addEventListener('load', (e) => {
+  const img = e.target;
+  if (!img || img.tagName !== 'IMG') return;
+  if (!img.classList.contains('lazy-img__full') && !img.classList.contains('lazy-img__thumb')) return;
+  onProgressiveImgPainted(img);
+}, true);
+
+/** Hide the blur thumb after the full layer has painted. Never mutates cover layout. */
 function bindProgressiveImg(wrap) {
   if (!wrap || wrap.dataset.lazyBound) return;
   wrap.dataset.lazyBound = '1';
   const thumb = wrap.querySelector('.lazy-img__thumb');
   const full = wrap.querySelector('.lazy-img__full');
-  if (!thumb || !full) return;
-  const hide = () => { wrap.classList.add('is-loaded'); };
-  if (full.complete) hide();
-  else {
-    full.addEventListener('load', hide, { once: true });
-    full.addEventListener('error', hide, { once: true });
+  const painted = (img) => onProgressiveImgPainted(img);
+  whenImgReady(thumb, painted);
+  whenImgReady(full, painted);
+  if (full && full.complete && !full.naturalWidth) wrap.classList.add('is-loaded');
+  // Nested modal scroller: lazy imgs can decode without a load event. Re-read
+  // intrinsic size when the reserved frame actually enters the viewport.
+  if (full && typeof IntersectionObserver === 'function') {
+    const io = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      io.disconnect();
+      if (typeof full.decode === 'function') {
+        full.decode().then(() => painted(full)).catch(() => painted(full));
+      } else {
+        painted(full);
+      }
+    });
+    io.observe(wrap);
   }
 }
 
@@ -5436,21 +5526,23 @@ function progressiveImgEl(src, className, opts) {
   const { full, thumb } = progressiveImgAttrs(src, opts);
   const wrap = el('span', `lazy-img${className ? ` ${className}` : ''}`);
   const eager = className && /(modal__cover|card__cover)/.test(className);
+  let t = null;
   if (thumb) {
-    const t = el('img', 'lazy-img__thumb');
-    t.src = thumb;
+    t = el('img', 'lazy-img__thumb');
     t.alt = '';
     t.decoding = 'async';
     t.setAttribute('aria-hidden', 'true');
     wrap.appendChild(t);
   }
   const f = el('img', 'lazy-img__full');
-  f.src = full;
   f.alt = '';
   f.decoding = 'async';
   if (!eager) f.loading = 'lazy';
   wrap.appendChild(f);
+  // Bind before src so a cache hit cannot outrun the load listener.
   bindProgressiveImg(wrap);
+  if (t) t.src = thumb;
+  f.src = full;
   return wrap;
 }
 
@@ -7104,8 +7196,8 @@ function handleGlossaryAlphaScrub(clientY, isStart) {
 }
 
 // ── Preview (localhost, no real session) ──────────────────────────────
-function mockCover(from, to, glyph) {
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='560' height='360'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='${from}'/><stop offset='1' stop-color='${to}'/></linearGradient></defs><rect width='560' height='360' fill='url(#g)'/><text x='50%' y='56%' font-size='120' text-anchor='middle' fill='rgba(255,255,255,.9)'>${glyph}</text></svg>`;
+function mockCover(from, to, glyph, w = 560, h = 360) {
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='${from}'/><stop offset='1' stop-color='${to}'/></linearGradient></defs><rect width='${w}' height='${h}' fill='url(#g)'/><text x='50%' y='56%' font-size='${Math.round(Math.min(w, h) * 0.34)}' text-anchor='middle' fill='rgba(255,255,255,.9)'>${glyph}</text></svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 function loadPreviewFeed() {
@@ -7128,7 +7220,7 @@ function loadPreviewFeed() {
         { type: 'bulleted_list_item', bulleted_list_item: { rich_text: [{ plain_text: 'Rompimento com volume acima da média', annotations: {} }] } },
         { type: 'bulleted_list_item', bulleted_list_item: { rich_text: [{ plain_text: 'Fundamentos on-chain sólidos', annotations: {} }] } },
         { type: 'divider', divider: {} },
-        { type: 'image', image: { external: { url: mockCover('#1F2937', '#111827', '📈') }, caption: [{ plain_text: 'BTC/USD no gráfico diário', annotations: {} }] } },
+        { type: 'image', image: { external: { url: mockCover('#1F2937', '#111827', '📈', 400, 640) }, caption: [{ plain_text: 'BTC/USD no gráfico diário', annotations: {} }] } },
         { type: 'heading_2', heading_2: { rich_text: [{ plain_text: 'Níveis importantes', annotations: {} }] } },
         { type: 'table', table: { has_column_header: true }, children: [
           { type: 'table_row', table_row: { cells: [[{ plain_text: 'Nível', annotations: {} }], [{ plain_text: 'Preço', annotations: {} }]] } },
