@@ -4,10 +4,12 @@
 const STRINGS = {
   pt: {
     'header.title': 'Feed',
-    'login.subtitle': 'Entre para acessar o feed.',
+    'login.subtitle': 'Entre para acessar Estudos, glossário e simuladores.',
     'login.hint': 'Primeiro acesso? Sua conta é criada automaticamente ao entrar com o Google.',
     'login.error': 'Não foi possível entrar. Tente novamente.',
     'login.google': 'Continuar com o Google',
+    'login.close': 'Fechar',
+    'menu.signIn': 'Entrar',
     'langBanner.text': 'Este site está disponível em Português.',
     'langBanner.switch': 'Mudar para Português',
     'postLangBanner.text': 'Este post também está disponível em Português.',
@@ -189,10 +191,12 @@ const STRINGS = {
   },
   en: {
     'header.title': 'Feed',
-    'login.subtitle': 'Sign in to access the feed.',
+    'login.subtitle': 'Sign in to access Lessons, the glossary, and the simulators.',
     'login.hint': 'First time? Your account is created automatically when you sign in with Google.',
     'login.error': "Couldn't sign in. Please try again.",
     'login.google': 'Continue with Google',
+    'login.close': 'Close',
+    'menu.signIn': 'Sign in',
     'langBanner.text': 'This site is available in English.',
     'langBanner.switch': 'Switch to English',
     'postLangBanner.text': 'This post is also available in English.',

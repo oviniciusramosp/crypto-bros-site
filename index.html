@@ -29,7 +29,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=120" />
+    <link rel="stylesheet" href="./styles.css?v=121" />
     <script>
       (function () {
         try {
@@ -51,10 +51,11 @@
       <button id="lang-banner-close" class="lang-banner__close" aria-label="Fechar">✕</button>
     </div>
 
-    <!-- Login -->
-    <section id="login" class="login hidden">
+    <!-- Login overlay (gated views). Feed is public. -->
+    <section id="login" class="login hidden" role="dialog" aria-modal="true" aria-labelledby="login-title">
+      <button type="button" id="login-close" class="login__close" aria-label="Fechar">✕</button>
       <img class="login__logo" src="./icon.png" alt="Crypto Bros" />
-      <h1 class="login__title">Crypto Bros</h1>
+      <h1 class="login__title" id="login-title">Crypto Bros</h1>
       <p class="login__subtitle" id="login-subtitle"></p>
       <div class="g-wrap">
         <div class="g-fake" aria-hidden="true">
@@ -71,7 +72,7 @@
       </div>
     </section>
 
-    <!-- Feed -->
+    <!-- App shell (Feed is public; other views require sign-in) -->
     <main id="app" class="hidden">
       <div id="ios-banner" class="ios-banner hidden">
         <img src="./icon.png" alt="" class="ios-banner__icon" />
@@ -134,7 +135,14 @@
               <!-- Collapsed rail: single cycle button (system → light → dark). -->
               <button type="button" class="menu__theme-cycle" id="menu-theme-cycle" aria-label="Alterar Tema"></button>
             </div>
-            <div class="sidebar__user-wrap" id="sidebar-user-wrap">
+            <div class="sidebar__guest" id="sidebar-guest">
+              <div class="menu__seg" id="guest-lang">
+                <button type="button" data-lang="pt">Português BR</button>
+                <button type="button" data-lang="en">English</button>
+              </div>
+              <button type="button" class="sidebar__login" id="sidebar-login"></button>
+            </div>
+            <div class="sidebar__user-wrap hidden" id="sidebar-user-wrap">
               <button type="button" class="menu__user menu__user--trigger" id="user-menu-trigger" aria-haspopup="menu" aria-expanded="false" aria-controls="user-popover">
                 <div class="menu__user-avatar" id="menu-avatar"></div>
                 <div class="menu__user-info">
@@ -359,7 +367,7 @@
     </div>
 
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script src="./i18n.js?v=43" defer></script>
-    <script src="./app.js?v=95" defer></script>
+    <script src="./i18n.js?v=44" defer></script>
+    <script src="./app.js?v=96" defer></script>
   </body>
 </html>

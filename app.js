@@ -19,25 +19,41 @@ const HISTORY_PAGE_SIZE = 5;
 
 const $ = (id) => document.getElementById(id);
 const getSession = () => localStorage.getItem(SESSION_KEY);
+const isLoggedIn = () => !!getSession();
 const isLocalHost = () => location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 /** Mock feed (no API). Only when local AND we still have no session after dev bootstrap. */
 const isPreview = () => isLocalHost() && !getSession();
+const GATED_VIEWS = { lessons: 1, glossary: 1, dca: 1, pos: 1 };
+const isGatedView = (view) => !!GATED_VIEWS[view];
+
+/** After a guest tries a gated view, resume it once they sign in. */
+let pendingAuth = null; // { view?: string, lesson?: string } | null
+
+/**
+ * Call the Worker. Sends Bearer when a session exists; public routes (feed/post)
+ * work without one.
+ */
+async function publicFetch(path, opts) {
+  const session = getSession();
+  return fetch(`${CONFIG.workerBase}${path}`, {
+    ...opts,
+    headers: {
+      ...(session ? { Authorization: `Bearer ${session}` } : {}),
+      ...(opts && opts.headers),
+    },
+  });
+}
 
 /**
  * Bearer-authed call to the Worker, with the dead-session path handled once.
- * Returns null when the session is gone (the user has already been sent back to
- * the login screen) — callers just bail. Network errors still throw, so a caller
- * can tell "offline" apart from "signed out".
+ * Returns null when the session is gone — callers just bail. Network errors
+ * still throw, so a caller can tell "offline" apart from "signed out".
  */
 async function authFetch(path, opts) {
-  const res = await fetch(`${CONFIG.workerBase}${path}`, {
-    ...opts,
-    headers: { Authorization: `Bearer ${getSession()}`, ...(opts && opts.headers) },
-  });
+  const res = await publicFetch(path, opts);
   if (res.status === 401) {
     localStorage.removeItem(SESSION_KEY);
-    closeModal(true);
-    showLogin();
+    onSessionExpired();
     return null;
   }
   return res;
@@ -154,6 +170,12 @@ function applyStaticText() {
   $('login-subtitle').textContent = I18N.t('login.subtitle');
   $('login-hint').textContent = I18N.t('login.hint');
   $('g-fake-label').textContent = I18N.t('login.google');
+  const loginClose = $('login-close');
+  if (loginClose) loginClose.setAttribute('aria-label', I18N.t('login.close'));
+  const loginBtn = $('sidebar-login');
+  if (loginBtn) loginBtn.textContent = I18N.t('menu.signIn');
+  document.querySelectorAll('#guest-lang button').forEach((b) =>
+    b.classList.toggle('active', b.dataset.lang === I18N.lang));
   const sidebar = $('sidebar');
   if (sidebar) sidebar.setAttribute('aria-label', I18N.t('sidebar.nav'));
   applySidebarLabels();
@@ -294,8 +316,6 @@ function onLangChange(lang) {
     renderMarketModalHeader();
     if (mmState.error || mmState.loading) renderMarketChart();
   }
-  if ($('app').classList.contains('hidden')) return; // still on the login screen
-
   // Language selects a different set of Notion rows entirely — drop everything cached
   // under the old language, including any open lesson / glossary.
   lessonModules = [];
@@ -325,9 +345,8 @@ function onLangChange(lang) {
   // the tag name set is unchanged).
   selectedTag = 'all';
   if (feedTags.length) renderTags();
-  if (isPreview()) { renderFeed(); return; }
-  if (currentView === 'lessons') loadLessons();
-  else if (currentView === 'glossary') loadGlossaryPage();
+  if (currentView === 'lessons' && isLoggedIn()) loadLessons();
+  else if (currentView === 'glossary' && isLoggedIn()) loadGlossaryPage();
   else if (currentView === 'dca' || currentView === 'pos') { /* already reloaded above */ }
   else loadFeed();
 }
@@ -457,8 +476,8 @@ async function switchToAltPost(altId, lang) {
     // Drop language-scoped caches; the feed for the new language loads in the background.
     lessonModules = [];
     for (const k of Object.keys(lessonCache)) delete lessonCache[k];
-    if (!isPreview() && !$('app').classList.contains('hidden')) {
-      if (currentView === 'lessons') loadLessons();
+    if (!$('app').classList.contains('hidden')) {
+      if (currentView === 'lessons' && isLoggedIn()) loadLessons();
       else loadFeed();
     }
   }
@@ -490,7 +509,7 @@ async function onGoogleCredential(response) {
     if (!res.ok) throw new Error(`auth ${res.status}`);
     const data = await res.json();
     localStorage.setItem(SESSION_KEY, data.session);
-    showApp();
+    onSignedIn();
   } catch (e) {
     errorEl.textContent = I18N.t('login.error');
     errorEl.classList.remove('hidden');
@@ -511,11 +530,39 @@ function signOut() {
   localStorage.removeItem(NAME_KEY);
   localStorage.removeItem(EMAIL_KEY);
   // Keep DEV_SECRET_KEY so the next reload on localhost can re-bootstrap without re-pasting.
-  if (marqueeTimer) clearInterval(marqueeTimer);
   closeSidebarDrawer();
+  closeUserPopover();
   closeIndicatorModal();
   closeMarketModal();
-  showLogin();
+  currentLessonId = null;
+  closeLessonPanel();
+  if (isGatedView(currentView)) {
+    setView('feed');
+  }
+  syncAuthChrome();
+  renderFavoriteCoins([]);
+  updateNotifButton();
+}
+
+function onSignedIn() {
+  hideLoginOverlay();
+  syncAuthChrome();
+  loadFavoriteCoins();
+  updateNotifButton();
+  glossaryLoadedLang = null;
+  ensureGlossaryLoaded({ force: true }).then(() => {
+    if (feedPosts.length) renderFeed();
+  });
+  const intent = pendingAuth;
+  pendingAuth = null;
+  if (intent && intent.lesson) {
+    openLesson(intent.lesson);
+    return;
+  }
+  if (intent && intent.view && isGatedView(intent.view)) {
+    setView(intent.view);
+    return;
+  }
 }
 
 /** Soft-load optional gitignored `dev-config.js` that may set window.__CB_DEV_SECRET__. */
@@ -612,6 +659,18 @@ function renderMenuUser() {
   $('menu-name').textContent = displayName();
   $('menu-email').textContent = localStorage.getItem(EMAIL_KEY) || (isPreview() ? 'voce@exemplo.com' : '');
   $('menu-avatar').replaceChildren(userAvatarNode());
+}
+
+function syncAuthChrome() {
+  const loggedIn = isLoggedIn();
+  const guest = $('sidebar-guest');
+  const user = $('sidebar-user-wrap');
+  if (guest) guest.classList.toggle('hidden', loggedIn);
+  if (user) user.classList.toggle('hidden', !loggedIn);
+  const loginBtn = $('sidebar-login');
+  if (loginBtn) loginBtn.textContent = I18N.t('menu.signIn');
+  if (loggedIn) renderMenuUser();
+  else closeUserPopover();
 }
 
 // Favorite coins — read-only mirror of what the user picked in the app (GET /web/profile).
@@ -769,22 +828,45 @@ function renderMenuState() {
 }
 
 // ── Views ─────────────────────────────────────────────────────────────
-function showLogin() {
-  $('app').classList.add('hidden');
+function showLoginOverlay(intent) {
+  if (intent !== undefined) pendingAuth = intent;
   $('login').classList.remove('hidden');
-  setSidebarOpen(false);
-  document.body.style.overflow = '';
+  $('login').setAttribute('aria-hidden', 'false');
   applyStaticText();
   initGoogle();
 }
-function showApp() {
+function hideLoginOverlay() {
   $('login').classList.add('hidden');
+  $('login').setAttribute('aria-hidden', 'true');
+  const err = $('login-error');
+  if (err) err.classList.add('hidden');
+}
+function dismissLoginOverlay() {
+  hideLoginOverlay();
+  pendingAuth = null;
+  currentLessonId = null;
+  closeLessonPanel();
+  const params = new URLSearchParams(location.search);
+  if (isGatedView(currentView) || isGatedView(params.get('view')) || params.get('lesson')) {
+    history.replaceState({ view: 'feed' }, '', viewUrl('feed'));
+    if (isGatedView(currentView)) setView('feed', true);
+  }
+}
+function onSessionExpired() {
+  syncAuthChrome();
+  if (isGatedView(currentView) || currentLessonId) {
+    showLoginOverlay({ view: currentView, lesson: currentLessonId || undefined });
+  }
+}
+function showApp() {
+  hideLoginOverlay();
   $('app').classList.remove('hidden');
-  renderMenuUser();
+  syncAuthChrome();
   applyStaticText();
   startMarquee();
   loadMarket();
-  loadFavoriteCoins();
+  if (isLoggedIn()) loadFavoriteCoins();
+  else renderFavoriteCoins([]);
   // Glossary loads in parallel — when ready, re-paint open content so terms get underlines.
   ensureGlossaryLoaded().then(() => {
     if (feedPosts.length) renderFeed();
@@ -792,7 +874,7 @@ function showApp() {
     if (currentLessonId && lessonCache[currentLessonId]) renderLessonModal(lessonCache[currentLessonId]);
     if (currentView === 'glossary') renderGlossaryPage();
   });
-  if (isPreview()) { loadPreviewFeed(); } else { loadFeed(); }
+  loadFeed();
   syncFromUrl(); // restores ?view= / ?post= / ?lesson= on load and after login
   maybeShowIosBanner();
   updateNotifButton();
@@ -4917,8 +4999,8 @@ async function ensureGlossaryLoaded(opts) {
   const force = opts && opts.force;
   // Already loaded for this language (including a successful empty result).
   if (!force && glossaryLoadedLang === I18N.notionLang) return;
-  if (isPreview()) {
-    setGlossaryTerms(mockGlossaryTerms());
+  if (!isLoggedIn()) {
+    setGlossaryTerms([]);
     return;
   }
   try {
@@ -5954,10 +6036,6 @@ function selectTag(name) {
   historyPage = 0;
   // In-place style update so hover → selected (and back) can CSS-transition.
   syncTagPills();
-  if (isPreview()) {
-    renderFeed();
-    return;
-  }
   loadFeed();
 }
 
@@ -5986,7 +6064,7 @@ function renderHistory() {
   // History rows are metadata-only (no tags). After a server-side tag query the list
   // is already scoped, so show it. Preview filters client-side only → hide history
   // while a tag is active (mock history has no tags to match against).
-  if (!feedHistory.length || (selectedTag !== 'all' && isPreview())) {
+  if (!feedHistory.length) {
     sec.classList.add('hidden');
     sec.replaceChildren();
     return;
@@ -6101,14 +6179,13 @@ async function loadFeed() {
   const tagParam = requestedTag !== 'all' ? `&tag=${encodeURIComponent(requestedTag)}` : '';
   let res;
   try {
-    res = await authFetch(`/web/feed?lang=${I18N.notionLang}${tagParam}`);
+    res = await publicFetch(`/web/feed?lang=${I18N.notionLang}${tagParam}`);
   } catch (e) {
     if (seq !== feedLoadSeq) return;
     if (!showedCache) $('feed-list').replaceChildren(stateNode(I18N.t('offline.message'), null, loadFeed));
     return;
   }
   if (seq !== feedLoadSeq) return;
-  if (!res) return; // session expired — authFetch already sent us to the login screen
   if (!res.ok) {
     if (!showedCache) $('feed-list').replaceChildren(stateNode(I18N.t('error.title'), I18N.t('error.message'), loadFeed));
     return;
@@ -6337,14 +6414,8 @@ async function openPost(id, fromPop) {
   }
   $('modal-content').replaceChildren(postDetailSkeleton());
   openModal();
-  if (isPreview()) {
-    const m = feedPosts.find((p) => p.id === id) || feedHistory.find((p) => p.id === id);
-    if (m) renderPostModal(m); else $('modal-content').innerHTML = `<div class="modal__state">${I18N.t('modal.error')}</div>`;
-    return;
-  }
   try {
-    const res = await authFetch(`/web/post?id=${encodeURIComponent(id)}`);
-    if (!res) return; // session expired
+    const res = await publicFetch(`/web/post?id=${encodeURIComponent(id)}`);
     if (!res.ok) throw new Error();
     const post = await res.json();
     postCache[id] = post;
@@ -6519,10 +6590,8 @@ function applyLessonsData(data) {
 
 /** Stale-while-revalidate, same shape as loadFeed(). */
 async function loadLessons() {
-  if (isPreview()) {
-    // Lessons are session-gated end to end (progress is per user), so there is nothing
-    // sensible to mock — say so instead of bouncing the previewer to the login screen.
-    $('lessons-list').replaceChildren(stateNode(I18N.t('lessons.title'), I18N.t('login.hint')));
+  if (!isLoggedIn()) {
+    showLoginOverlay({ view: 'lessons' });
     return;
   }
 
@@ -6681,6 +6750,10 @@ function presentLessonSurface() {
 }
 
 async function openLesson(id, fromPop) {
+  if (!isLoggedIn()) {
+    showLoginOverlay({ view: 'lessons', lesson: id });
+    return;
+  }
   const prevId = currentLessonId;
   currentLessonId = id;
   currentPostId = null;
@@ -6845,6 +6918,10 @@ async function transitionViews(fromView, toView) {
 }
 
 function setView(view, fromPop) {
+  if (!isLoggedIn() && isGatedView(view)) {
+    showLoginOverlay({ view });
+    return;
+  }
   const leavingLessons = currentView === 'lessons' && view !== 'lessons';
   const leavingGlossary = currentView === 'glossary' && view !== 'glossary';
   const leavingDca = currentView === 'dca' && view !== 'dca';
@@ -9079,6 +9156,7 @@ $('lightbox').addEventListener('click', closeLightbox);
 $('lightbox-close').addEventListener('click', closeLightbox);
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  if (!$('login').classList.contains('hidden')) { dismissLoginOverlay(); return; }
   if ($('glossary-tooltip-root') && !$('glossary-tooltip-root').hidden) {
     hideGlossaryTooltip();
     return;
@@ -9093,8 +9171,20 @@ document.addEventListener('keydown', (e) => {
 });
 // Back/forward: re-derive the whole UI from the URL, so view + modal stay in step.
 window.addEventListener('popstate', syncFromUrl);
-document.querySelectorAll('#login-lang button').forEach((b) =>
+document.querySelectorAll('#login-lang button, #guest-lang button').forEach((b) =>
   b.addEventListener('click', () => onLangChange(b.dataset.lang)));
+const loginClose = $('login-close');
+if (loginClose) loginClose.addEventListener('click', () => dismissLoginOverlay());
+const sidebarLogin = $('sidebar-login');
+if (sidebarLogin) {
+  sidebarLogin.addEventListener('click', () => {
+    closeSidebarDrawer();
+    showLoginOverlay(null);
+  });
+}
+$('login').addEventListener('click', (e) => {
+  if (e.target === $('login')) dismissLoginOverlay();
+});
 $('lang-banner-close').addEventListener('click', () => {
   localStorage.setItem(LANG_BANNER_KEY, '1');
   hideLangBanner();
@@ -9109,11 +9199,10 @@ if (postLangClose) {
 // Register the service worker for app-shell/asset caching (push permission is separate).
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
-// Boot: on localhost, try exchanging a dev secret for a real session before deciding
-// between showApp (real or mock) and the Google login screen.
+// Boot: Feed is public. Localhost may still exchange a dev secret for a real session
+// (lessons / glossary / simulators). Guests land on the feed, not the login screen.
 (async () => {
   await maybeBootstrapDevSession();
-  if (getSession() || isPreview()) showApp();
-  else showLogin();
+  showApp();
   maybeSuggestLanguage();
 })();

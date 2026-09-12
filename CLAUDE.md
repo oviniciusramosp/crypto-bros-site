@@ -9,7 +9,7 @@
 
 ## O que é este repo
 
-Site estático de **crypto-bros.com** — Feed gated por login Google, com paridade visual com o Feed do app.
+Site estático de **crypto-bros.com** — Feed **público**; Estudos, glossário e simuladores gated por login Google. Paridade visual com o Feed do app.
 
 **Sem build step.** HTML/CSS/JS vanilla servido direto pelo GitHub Pages (`.github/workflows/deploy-site.yml` publica a raiz do repo a cada push na `main`).
 
@@ -31,8 +31,8 @@ Repo é **público** porque o GitHub Pages no plano Free exige repo público —
 
 | Rota                        | O que traz                                          |
 | --------------------------- | --------------------------------------------------- |
-| `GET /web/feed`             | Feed gated por sessão (`?lang=` + opcional `?tag=` filtra no Notion) |
-| `GET /web/post`             | Detalhe do post (blocos completos)                  |
+| `GET /web/feed`             | Feed **público** (`?lang=` + opcional `?tag=` filtra no Notion) |
+| `GET /web/post`             | Detalhe do post (público; só Published na DB de posts) |
 | `GET /web/lessons`          | Estudos: módulos agrupados + progresso do usuário    |
 | `GET /web/lesson`           | Detalhe da aula (blocos completos)                  |
 | `GET/POST/DELETE /web/progress` | Aula concluída, por conta OAuth (D1)            |
@@ -66,7 +66,7 @@ Os tokens são **espelhados à mão** de `crypto-bros-app/src/theme/*`. **O app 
 python3 -m http.server 5173   # → http://localhost:5173
 ```
 
-`app.js` tem modo preview em localhost (posts mock, widgets de mercado reais) — o login é bypassado.
+O Feed é público (Worker `/web/feed` + `/web/post`). Em localhost, `dev-config.js` ainda pode trocar um secret por sessão via `/auth/dev` para abrir Estudos/glossário/simuladores. Sem sessão, essas views abrem o overlay de login.
 
 ## Gotchas
 
