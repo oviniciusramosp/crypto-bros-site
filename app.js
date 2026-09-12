@@ -5467,6 +5467,45 @@ function internalCalcRoute(href) {
 }
 function blockText(b) { const d = b[b.type]; return d ? richText(d.rich_text) : ''; }
 function imgUrl(d) { return d ? (d.external ? d.external.url : d.file ? d.file.url : null) : null; }
+function parseImageCaption(caption) {
+  const list = caption || [];
+  const plain = list.map((t) => t.plain_text || '').join('');
+  const lower = plain.toLowerCase();
+  const w = lower.match(/\[w:(full|1\/2|1\/3)\]/);
+  const a = lower.match(/\[a:(left|center|right)\]/);
+  const strip = (s) => String(s || '')
+    .replace(/\[(light|dark)\]/gi, '')
+    .replace(/\[w:(full|1\/2|1\/3)\]/gi, '')
+    .replace(/\[a:(left|center|right)\]/gi, '')
+    .trim();
+  return {
+    lightOnly: lower.includes('[light]'),
+    darkOnly: lower.includes('[dark]'),
+    width: w ? w[1] : 'full',
+    align: a ? a[1] : 'center',
+    shown: list
+      .map((t) => ({ ...t, plain_text: strip(t.plain_text) }))
+      .filter((t) => t.plain_text !== ''),
+  };
+}
+function columnListAsCarousel(cols) {
+  if (!cols || cols.length < 2) return null;
+  const slides = [];
+  for (const col of cols) {
+    const kids = col.children || [];
+    const meaningful = kids.filter((c) => {
+      if (c.type !== 'paragraph') return true;
+      const d = c.paragraph;
+      const rt = d && d.rich_text;
+      return Array.isArray(rt) && rt.some((t) => (t.plain_text || '').trim());
+    });
+    if (meaningful.length !== 1 || meaningful[0].type !== 'image') return null;
+    const u = imgUrl(meaningful[0].image);
+    if (!u) return null;
+    slides.push({ url: u, caption: (meaningful[0].image && meaningful[0].image.caption) || [] });
+  }
+  return slides;
+}
 function hostname(url) { try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return url; } }
 function youtubeEmbed(url) {
   const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([\w-]{11})/);
@@ -5597,6 +5636,25 @@ function bindProgressiveImg(wrap) {
 function hydrateLazyImages(root) {
   if (!root) return;
   root.querySelectorAll('.lazy-img').forEach(bindProgressiveImg);
+  hydrateCarousels(root);
+}
+
+function hydrateCarousels(root) {
+  if (!root) return;
+  root.querySelectorAll('.nb-carousel').forEach((wrap) => {
+    if (wrap.dataset.bound) return;
+    wrap.dataset.bound = '1';
+    const track = wrap.querySelector('.nb-carousel__track');
+    const dots = [...wrap.querySelectorAll('.nb-carousel__dot')];
+    if (!track || !dots.length) return;
+    const sync = () => {
+      const w = track.clientWidth;
+      if (!w) return;
+      const i = Math.round(track.scrollLeft / w);
+      dots.forEach((d, di) => d.classList.toggle('is-on', di === i));
+    };
+    track.addEventListener('scroll', sync, { passive: true });
+  });
 }
 
 /**
@@ -5875,23 +5933,15 @@ function renderBlocks(blocks, skipFirstDivider) {
         flushHalf();
         const u = imgUrl(b.image);
         if (u) {
-          // Theme-gating (app parity — ImageBlock.tsx): a caption containing [light] means
-          // the image is light-mode only, [dark] means dark-mode only. The marker is an
-          // instruction, not a caption, so it is stripped from what gets shown.
-          const caption = (b.image && b.image.caption) || [];
-          const plain = caption.map((t) => t.plain_text || '').join('').toLowerCase();
-          const lightOnly = plain.includes('[light]');
-          const darkOnly = plain.includes('[dark]');
-          if ((lightOnly && isDark()) || (darkOnly && !isDark())) break; // wrong theme → drop it
-
-          const shown = (lightOnly || darkOnly)
-            ? caption
-                .map((t) => ({ ...t, plain_text: (t.plain_text || '').replace(/\[(light|dark)\]/gi, '').trim() }))
-                .filter((t) => t.plain_text !== '')
-            : caption;
-          const cap = shown.length ? richText(shown) : '';
-          // Progressive: tiny blurred thumb first, then width-capped full (app ImageBlock/CachedImage).
-          html += `<figure class="nb-figure">${progressiveImgHtml(u, 'nb-figure__img', { fullWidth: 1200, thumbWidth: 40 })}${cap ? `<figcaption>${cap}</figcaption>` : ''}</figure>`;
+          const meta = parseImageCaption((b.image && b.image.caption) || []);
+          if ((meta.lightOnly && isDark()) || (meta.darkOnly && !isDark())) break;
+          const cap = meta.shown.length ? richText(meta.shown) : '';
+          const layoutCls = [
+            meta.width === '1/2' ? 'nb-figure--half' : '',
+            meta.width === '1/3' ? 'nb-figure--third' : '',
+            meta.width !== 'full' ? `nb-figure--${meta.align}` : '',
+          ].filter(Boolean).join(' ');
+          html += `<figure class="nb-figure${layoutCls ? ` ${layoutCls}` : ''}">${progressiveImgHtml(u, 'nb-figure__img', { fullWidth: 1200, thumbWidth: 40 })}${cap ? `<figcaption>${cap}</figcaption>` : ''}</figure>`;
         }
         break;
       }
@@ -5930,6 +5980,17 @@ function renderBlocks(blocks, skipFirstDivider) {
       case 'column_list': {
         flushHalf();
         const cols = (b.children || []).filter((c) => c.type === 'column');
+        const slides = columnListAsCarousel(cols);
+        if (slides) {
+          const dots = slides.length > 1
+            ? `<div class="nb-carousel__dots" aria-hidden="true">${slides.map((_, i) => `<span class="nb-carousel__dot${i === 0 ? ' is-on' : ''}"></span>`).join('')}</div>`
+            : '';
+          html += `<div class="nb-carousel">` +
+            `<div class="nb-carousel__track">` +
+            slides.map((s) => `<div class="nb-carousel__slide">${progressiveImgHtml(s.url, 'nb-figure__img', { fullWidth: 1200, thumbWidth: 40 })}</div>`).join('') +
+            `</div>${dots}</div>`;
+          break;
+        }
         if (cols.length) html += `<div class="nb-columns">${cols.map((c) => `<div class="nb-column">${renderBlocks(c.children || [])}</div>`).join('')}</div>`;
         break;
       }

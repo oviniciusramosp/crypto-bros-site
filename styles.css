@@ -1697,8 +1697,38 @@ body.modal-open {
 
 .nb-hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 .nb-figure { margin: 12px 0; }
+.nb-figure--half { width: 50%; }
+.nb-figure--third { width: 33.333%; }
+.nb-figure--left { margin-left: 0; margin-right: auto; }
+.nb-figure--center { margin-left: auto; margin-right: auto; }
+.nb-figure--right { margin-left: auto; margin-right: 0; }
 .nb-figure img,
 .nb-figure .lazy-img { width: 100%; border-radius: 10px; display: block; }
+.nb-carousel { margin: 12px 0; }
+.nb-carousel__track {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+}
+.nb-carousel__track::-webkit-scrollbar { display: none; }
+.nb-carousel__slide {
+  flex: 0 0 100%;
+  width: 100%;
+  scroll-snap-align: start;
+}
+.nb-carousel__slide .lazy-img { width: 100%; border-radius: 10px; margin: 0; }
+.nb-carousel__dots {
+  display: flex; justify-content: center; gap: 5px; margin-top: 8px;
+}
+.nb-carousel__dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-tertiary); opacity: 0.35;
+}
+.nb-carousel__dot.is-on { background: var(--text); opacity: 1; }
 .nb-figure figcaption { margin-top: 6px; font-size: 12px; line-height: 16px; color: var(--text-tertiary); text-align: center; }
 .nb-video { position: relative; aspect-ratio: 16 / 9; margin: 12px 0; border-radius: 10px; overflow: hidden; background: #000; }
 .nb-video iframe, .nb-video video { position: absolute; inset: 0; width: 100%; height: 100%; border: none; }
