@@ -2286,62 +2286,45 @@ body.modal-open {
 }
 .nb-widget-unsupported svg { flex: 0 0 auto; opacity: 0.7; }
 
-/* ── Market widget (Fear & Greed + MVRV history cards) ─────────────── */
-/* Parity with IndicatorHistoryCard + IndicatorSparkline (app indicadores). */
+/* ── Market widget (Fear & Greed + MVRV) ───────────────────────────── */
+/* Parity with FearGreedWidget.tsx (glass card + dual gauge sections). */
 .market {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-  margin: 12px var(--pad-screen) 0;
-}
-.ih-card {
   position: relative;
-  background: var(--surface);
-  border: 1px solid var(--inner-border);
-  border-radius: var(--radius-card);
-  padding: var(--space-md);
+  margin: 12px var(--pad-screen) 0;
+  background: var(--surface); border: 1px solid var(--inner-border);
+  border-radius: var(--radius-card); padding: var(--space-md);
+  display: flex; align-items: stretch; overflow: hidden;
   cursor: pointer;
   transition: transform 0.15s ease, background 0.15s ease;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
-.ih-card:hover { background: color-mix(in srgb, var(--surface) 92%, var(--text) 8%); }
-.ih-card:active { transform: scale(0.97); }
-.ih-card.is-scrubbing,
-.ih-card.is-scrubbing:active { transform: none; }
-.ih-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.ih-card__head {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; margin-bottom: var(--space-sm);
-}
-.ih-card__title {
-  font-size: 15px; font-weight: 600; line-height: 20px; color: var(--text);
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.ih-card__info {
-  flex: 0 0 auto; width: 18px; height: 18px; color: var(--text-tertiary);
+.market:hover { background: color-mix(in srgb, var(--surface) 92%, var(--text) 8%); }
+.market:active { transform: scale(0.97); }
+.market:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.market__info {
+  position: absolute; top: var(--space-sm); right: var(--space-sm); z-index: 1;
+  width: 16px; height: 16px; color: var(--divider); pointer-events: none;
   display: flex; align-items: center; justify-content: center;
-  pointer-events: none;
 }
-.ih-card__info svg { width: 18px; height: 18px; display: block; }
-.ih-card__value-row {
-  display: flex; align-items: center; gap: var(--space-sm);
-  margin-bottom: var(--space-xs); min-width: 0;
+.market__info svg { width: 16px; height: 16px; display: block; }
+.market__sections { display: flex; align-items: stretch; flex: 1; width: 100%; }
+.market__section { flex: 1; display: flex; flex-direction: column; align-items: center; }
+.market__divider { width: 1px; align-self: stretch; margin: 0 12px; background: var(--divider); }
+.market__title {
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-tertiary); margin-bottom: var(--space-sm); text-align: center;
 }
-.ih-card__value {
-  font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums;
-  line-height: 1.15; letter-spacing: -0.4px;
-}
-.ih-card__pill {
-  padding: 3px 8px; border-radius: 8px;
-  font-size: 11px; font-weight: 600; line-height: 14px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-width: 100%;
-}
+.gauge-row { display: flex; align-items: center; gap: var(--space-sm); }
+.gauge-marker { stroke: var(--surface); }
+.market__value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.market__label { font-size: 12px; font-weight: 600; margin-top: var(--space-xs); text-align: center; }
+
+/* 90-day history sparkline — lives in the indicator info modal. */
 .ih-spark {
   position: relative;
   height: 76px;
-  margin-top: var(--space-xs);
+  margin: 0 0 12px;
   overflow: visible;
   touch-action: none;
 }
@@ -2351,15 +2334,12 @@ body.modal-open {
   width: 100%; height: 76px; border-radius: 8px;
   background: var(--skeleton); animation: pulse 1.4s ease-in-out infinite;
 }
-.ih-spark__tip { /* reuses .mm__tooltip */ }
 .ih-spark__tip-val { display: flex; align-items: center; gap: 5px; margin-top: 2px; }
 .ih-spark__dot { width: 6px; height: 6px; border-radius: 3px; flex: 0 0 auto; }
 @media (hover: hover) and (pointer: fine) {
   .ih-spark { cursor: crosshair; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ih-card { transition: none; }
-  .ih-card:active { transform: none; }
   .ih-spark__sk { animation: none; }
 }
 
@@ -2378,7 +2358,7 @@ body.modal-open {
   animation: modal-backdrop-in 0.2s ease;
 }
 .imodal__panel {
-  position: relative; width: 100%; max-width: 420px; max-height: min(90vh, 640px);
+  position: relative; width: 100%; max-width: 420px; max-height: min(90vh, 720px);
   background: var(--surface); border: 1px solid var(--inner-border);
   border-radius: var(--radius-card); overflow: hidden;
   display: flex; flex-direction: column;
