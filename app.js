@@ -64,7 +64,7 @@ let feedHistory = [];
 let feedTags = [];
 let selectedTag = 'all';
 let historyPage = 0;
-let marketData = { fng: null, mvrv: null, fngAt: null, mvrvAt: null };
+let marketData = { fng: null, mvrv: null, fngAt: null, mvrvAt: null, fngHistory: null, mvrvHistory: null };
 let marqueeTimer = null;
 let currentView = 'feed'; // 'feed' | 'lessons' | 'glossary'
 
@@ -87,6 +87,10 @@ function el(tag, className, text) {
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function prefersReducedMotion() {
+  try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+  catch (e) { return false; }
 }
 function rgba(hex, a) {
   const n = parseInt(hex.slice(1), 16);
@@ -4221,26 +4225,16 @@ function hydrateWidgets(root) {
 }
 
 // ── Market widget (Fear & Greed + MVRV) ───────────────────────────────
-// Mirrors FearGreedWidget.tsx + gaugeConstants.ts from the app (source of truth).
-// Equal visual zone weights, non-linear marker mapping, progressive arc fill,
-// theme-aware black/white marker.
-const GAUGE = {
-  size: 32,
-  stroke: 4,
-  radius: 14, // (32 - 4) / 2
-  circ: 2 * Math.PI * 14,
-  arcFrac: 0.75,
-  arcLen: 2 * Math.PI * 14 * 0.75,
-  rotation: 135,
-  gap: 5,
-  dimOpacity: 0.28,
-};
+// Parity with IndicatorHistoryCard + IndicatorSparkline (app indicadores).
+const IH_HISTORY_DAYS = 90;
+const IH_SPARK_H = 76;
+const IH_SPARK_PAD = { top: 10, right: 4, bottom: 10, left: 4 };
+const IH_BOUNDARY = 'rgba(156,163,175,0.5)';
 
 /** Mid-range tones from fngConstants INDICATOR_COLORS; extremes use theme success/error. */
 const INDICATOR_MID = { fear: '#F7931A', neutral: '#B0B0B0', greed: '#93C47D' };
 
 function indicatorColors() {
-  // --error / --success are fixed hexes in both themes (same as app colors.error/success)
   const err = '#EF4444';
   const ok = '#22C55E';
   return {
@@ -4255,51 +4249,6 @@ function indicatorColors() {
   };
 }
 
-// Zone boundaries mirror getFearGreedColor / getMVRVColor. Every zone gets equal visual
-// weight so the arc reads symmetric; valueToVisual moves the marker non-linearly within
-// each zone (wide value range over a fixed arc = slower marker, and vice-versa).
-function fearGreedZones(c) {
-  return [
-    { start: 0, end: 25, key: 'extremeFear', color: c.extremeFear, weight: 1 },
-    { start: 25, end: 45, key: 'fear', color: c.fear, weight: 1 },
-    { start: 45, end: 55, key: 'neutral', color: c.neutral, weight: 1 },
-    { start: 55, end: 75, key: 'greed', color: c.greed, weight: 1 },
-    { start: 75, end: 100, key: 'extremeGreed', color: c.extremeGreed, weight: 1 },
-  ];
-}
-function mvrvZones(c) {
-  // MVRV thresholds 1.0 / 1.5 / 2.4 / 3.5 on a 0–5 scale, normalized (÷5·100).
-  return [
-    { start: 0, end: 20, key: 'extremeUndervalued', color: c.extremeUndervalued, weight: 1 },
-    { start: 20, end: 30, key: 'undervalued', color: c.undervalued, weight: 1 },
-    { start: 30, end: 48, key: 'fairValue', color: c.fairValue, weight: 1 },
-    { start: 48, end: 70, key: 'overvalued', color: c.overvalued, weight: 1 },
-    { start: 70, end: 100, key: 'extremeOvervalued', color: c.extremeOvervalued, weight: 1 },
-  ];
-}
-
-/** Distribute zones along the arc by visual weight (defaults to value range). */
-function layoutZones(zones) {
-  const total = zones.reduce((sum, z) => sum + (z.weight ?? z.end - z.start), 0);
-  let acc = 0;
-  return zones.map((z) => {
-    const vStart = (acc / total) * 100;
-    acc += z.weight ?? z.end - z.start;
-    return { ...z, vStart, vEnd: (acc / total) * 100 };
-  });
-}
-
-/** Map a value-space position (0–100) to its visual arc position (0–100). */
-function valueToVisual(value, laid) {
-  for (const z of laid) {
-    if (value <= z.end) {
-      const frac = z.end === z.start ? 0 : (value - z.start) / (z.end - z.start);
-      return z.vStart + Math.min(1, Math.max(0, frac)) * (z.vEnd - z.vStart);
-    }
-  }
-  return 100;
-}
-
 function fngClassification(value) {
   if (value <= 25) return 'extremeFear';
   if (value <= 45) return 'fear';
@@ -4308,92 +4257,353 @@ function fngClassification(value) {
   return 'extremeGreed';
 }
 function mvrvClassification(value) {
-  // App uses strict < (useMVRV getClassificationKey)
   if (value < 1.0) return 'extremeUndervalued';
   if (value < 1.5) return 'undervalued';
   if (value < 2.4) return 'fairValue';
   if (value < 3.5) return 'overvalued';
   return 'extremeOvervalued';
 }
-function mvrvProgress(value) {
-  return Math.max(0, Math.min(100, (value / 5) * 100));
+function fngColorForValue(v) {
+  return FNG_LEVEL_COLORS[fngClassification(v)] || FNG_LEVEL_COLORS.neutral;
 }
-
-function buildGauge(zones, progress /* 0–100 in value space */) {
-  const { size, stroke, radius, circ, arcLen, rotation, gap, dimOpacity } = GAUGE;
-  const center = size / 2;
-  const laid = layoutZones(zones);
-  const markerVisual = valueToVisual(progress, laid);
-  const markerT = markerVisual / 100;
-
-  let segs = '';
-  for (let i = 0; i < laid.length; i++) {
-    const zone = laid[i];
-    // Inset only internal boundaries so the arc's outer tips stay put.
-    const startInset = i === 0 ? 0 : gap / 2;
-    const endInset = i === laid.length - 1 ? 0 : gap / 2;
-    const startDist = (zone.vStart / 100) * arcLen + startInset;
-    const segLength = Math.max(0.1, ((zone.vEnd - zone.vStart) / 100) * arcLen - startInset - endInset);
-    // Progressive fill: zones the marker has reached stay full opacity.
-    const opacity = zone.vStart < markerVisual ? 1 : dimOpacity;
-    segs += `<circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${zone.color}"` +
-      ` stroke-width="${stroke}" stroke-linecap="round"` +
-      ` stroke-dasharray="${segLength.toFixed(2)} ${circ.toFixed(2)}"` +
-      ` stroke-dashoffset="${(-startDist).toFixed(2)}" stroke-opacity="${opacity}"/>`;
-  }
-
-  const theta = ((rotation + markerT * 270) * Math.PI) / 180;
-  const mx = center + radius * Math.cos(theta);
-  const my = center + radius * Math.sin(theta);
-  // App: white marker on dark theme, black on light (not zone-colored).
-  const markerFill = isDark() ? '#FFFFFF' : '#000000';
-  const marker = `<circle class="gauge-marker" cx="${mx.toFixed(2)}" cy="${my.toFixed(2)}"` +
-    ` r="${stroke / 2 + 1}" fill="${markerFill}" stroke-width="1.5"/>`;
-
-  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">` +
-    `<g transform="rotate(${rotation} ${center} ${center})">${segs}</g>${marker}</svg>`;
-}
-
-function sectionHtml(titleKey, labelPrefix, value, valueText, zones, progress, colorForValue) {
-  if (value == null) {
-    return `<div class="market__section"><div class="market__title">${I18N.t(titleKey)}</div>
-      <div class="market__value" style="color:var(--text-tertiary)">—</div>
-      <div class="market__label" style="color:var(--text-tertiary)">${I18N.t('market.unavailable')}</div></div>`;
-  }
-  const color = colorForValue(value);
-  const key = labelPrefix === 'fng' ? fngClassification(value) : mvrvClassification(value);
-  const label = I18N.t(labelPrefix + '.' + key);
-  return `<div class="market__section"><div class="market__title">${I18N.t(titleKey)}</div>
-    <div class="gauge-row">${buildGauge(zones, progress)}<span class="market__value" style="color:${color}">${valueText}</span></div>
-    <div class="market__label" style="color:${color}">${label}</div></div>`;
+function mvrvColorForValue(v) {
+  return indicatorColors().mvrv[mvrvClassification(v)];
 }
 
 const MARKET_INFO_ICON =
-  `<span class="market__info" aria-hidden="true">` +
+  `<span class="ih-card__info" aria-hidden="true">` +
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` +
   `<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span>`;
 
+function lastHistoryPoint(hist) {
+  return hist && hist.length ? hist[hist.length - 1] : null;
+}
+
+function indicatorCardHtml(opts) {
+  const { kind, titleKey, ariaKey, value, valueText, color, label } = opts;
+  const valueHtml = value == null
+    ? `<span class="ih-card__value" style="color:var(--text-tertiary)">—</span>` +
+      `<span class="ih-card__pill" style="color:var(--text-tertiary);background:color-mix(in srgb, var(--text-tertiary) 13%, transparent)">${I18N.t('market.unavailable')}</span>`
+    : `<span class="ih-card__value" style="color:${color}">${valueText}</span>` +
+      (label
+        ? `<span class="ih-card__pill" style="color:${color};background:${color}22">${label}</span>`
+        : '');
+  return `<article class="ih-card" data-ih="${kind}" role="button" tabindex="0"` +
+    ` aria-label="${I18N.t(ariaKey)}" aria-haspopup="dialog">` +
+    `<div class="ih-card__head"><div class="ih-card__title">${I18N.t(titleKey)}</div>${MARKET_INFO_ICON}</div>` +
+    `<div class="ih-card__value-row">${valueHtml}</div>` +
+    `<div class="ih-spark" data-ih-spark="${kind}">` +
+      `<div class="ih-spark__canvas"></div>` +
+      `<div class="mm__tooltip ih-spark__tip hidden"></div>` +
+    `</div>` +
+    `</article>`;
+}
+
 function renderMarket() {
-  const fng = marketData.fng;
-  const mvrv = marketData.mvrv;
-  const colors = indicatorColors();
-  const fngZ = fearGreedZones(colors.fearGreed);
-  const mvrvZ = mvrvZones(colors.mvrv);
-  const fngColor = (v) => colors.fearGreed[fngClassification(v)];
-  const mvrvColor = (v) => colors.mvrv[mvrvClassification(v)];
+  const fngHist = marketData.fngHistory;
+  const mvrvHist = marketData.mvrvHistory;
+  const fng = marketData.fng != null ? marketData.fng : (lastHistoryPoint(fngHist)?.v ?? null);
+  const mvrv = marketData.mvrv != null ? marketData.mvrv : (lastHistoryPoint(mvrvHist)?.v ?? null);
+  const fngColor = fng == null ? null : fngColorForValue(fng);
+  const mvrvColor = mvrv == null ? null : mvrvColorForValue(mvrv);
 
   const el = $('market');
   el.setAttribute('aria-label', I18N.t('market.infoAria'));
   el.innerHTML =
-    MARKET_INFO_ICON +
-    `<div class="market__sections">` +
-    sectionHtml('market.fearGreed', 'fng', fng, fng == null ? '' : String(fng), fngZ, fng ?? 0, fngColor) +
-    `<div class="market__divider"></div>` +
-    sectionHtml('market.mvrv', 'mvrv', mvrv, mvrv == null ? '' : mvrv.toFixed(2), mvrvZ, mvrv == null ? 0 : mvrvProgress(mvrv), mvrvColor) +
-    `</div>`;
+    indicatorCardHtml({
+      kind: 'fng', titleKey: 'market.fearGreed', ariaKey: 'market.fngAria',
+      value: fng, valueText: fng == null ? '' : String(Math.round(fng)),
+      color: fngColor, label: fng == null ? '' : I18N.t('fng.' + fngClassification(fng)),
+    }) +
+    indicatorCardHtml({
+      kind: 'mvrv', titleKey: 'market.mvrv', ariaKey: 'market.mvrvAria',
+      value: mvrv, valueText: mvrv == null ? '' : mvrv.toFixed(2),
+      color: mvrvColor, label: mvrv == null ? '' : I18N.t('mvrv.' + mvrvClassification(mvrv)),
+    });
 
-  // Keep the open info modal in sync with theme / language / fresh data.
+  hydrateIndicatorSparks();
   if (!$('indicator-modal').classList.contains('hidden')) renderIndicatorModalContent();
+}
+
+let mvrvHistoryCache = null; // { points, fetchedAt }
+let ihSparkPlayed = { fng: false, mvrv: false };
+
+async function loadMvrvHistory() {
+  if (marketData.mvrvHistory && marketData.mvrvHistory.length >= 2) return marketData.mvrvHistory;
+  if (mvrvHistoryCache && Date.now() - mvrvHistoryCache.fetchedAt < 4 * 60 * 60 * 1000) {
+    return mvrvHistoryCache.points;
+  }
+  let points = [];
+  const ingest = (rows) => {
+    const out = [];
+    for (const row of rows) {
+      const t = typeof row.t === 'number' ? row.t : NaN;
+      const v = typeof row.v === 'number' ? row.v : NaN;
+      if (!isFinite(t) || !isFinite(v) || v <= 0) continue;
+      out.push({ t, v });
+    }
+    out.sort((a, b) => a.t - b.t);
+    return out;
+  };
+  try {
+    const start = new Date(Date.now() - IH_HISTORY_DAYS * 86400000).toISOString().slice(0, 10);
+    const url = `https://community-api.coinmetrics.io/v4/timeseries/asset-metrics` +
+      `?assets=btc&metrics=CapMVRVCur&frequency=1d&start_time=${start}&page_size=100`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const json = await res.json();
+      const rows = [];
+      for (const row of json.data || []) {
+        const v = parseFloat(row.CapMVRVCur);
+        if (!isFinite(v) || v <= 0 || !row.time) continue;
+        const d = new Date(row.time);
+        d.setUTCHours(0, 0, 0, 0);
+        rows.push({ t: d.getTime(), v });
+      }
+      points = ingest(rows);
+    }
+  } catch (e) { /* CORS / network — try Worker */ }
+  if (points.length < 2) {
+    try {
+      const res = await fetch(`${CONFIG.workerBase}/web/mvrv`);
+      if (res.ok) {
+        const d = await res.json();
+        if (Array.isArray(d.history)) points = ingest(d.history);
+      }
+    } catch (e) { /* keep empty */ }
+  }
+  mvrvHistoryCache = { points, fetchedAt: Date.now() };
+  return points;
+}
+
+function sparkSpec(kind) {
+  if (kind === 'fng') {
+    return {
+      data: (marketData.fngHistory || []).slice(-IH_HISTORY_DAYS),
+      zoneColorFor: fngColorForValue,
+      zoneLabelFor: (v) => I18N.t('fng.' + fngClassification(v)),
+      formatValue: (v) => String(Math.round(v)),
+      boundaries: [{ value: 25, color: IH_BOUNDARY }, { value: 75, color: IH_BOUNDARY }],
+      domainMin: 0,
+      domainMax: 100,
+    };
+  }
+  return {
+    data: (marketData.mvrvHistory || []).slice(-IH_HISTORY_DAYS),
+    zoneColorFor: mvrvColorForValue,
+    zoneLabelFor: (v) => I18N.t('mvrv.' + mvrvClassification(v)),
+    formatValue: (v) => v.toFixed(2),
+    boundaries: [
+      { value: 1, color: IH_BOUNDARY },
+      { value: 2.4, color: IH_BOUNDARY },
+      { value: 3.5, color: IH_BOUNDARY },
+    ],
+  };
+}
+
+function paintIndicatorSparkline(host, tipEl, opts) {
+  const {
+    data, zoneColorFor, zoneLabelFor, formatValue, boundaries,
+    domainMin, domainMax, scrub = null, uid = 'ih', playEntrance = false,
+  } = opts;
+  const width = host.clientWidth || host.parentElement?.clientWidth || 0;
+  const height = IH_SPARK_H;
+  if (!data || data.length < 2 || width < 8) {
+    host.innerHTML = `<div class="ih-spark__sk"></div>`;
+    if (tipEl) tipEl.classList.add('hidden');
+    return null;
+  }
+  const P = IH_SPARK_PAD;
+  const chartW = Math.max(1, width - P.left - P.right);
+  const chartH = Math.max(1, height - P.top - P.bottom);
+  let minV = domainMin ?? Infinity;
+  let maxV = domainMax ?? -Infinity;
+  for (const p of data) {
+    if (domainMin == null && p.v < minV) minV = p.v;
+    if (domainMax == null && p.v > maxV) maxV = p.v;
+  }
+  for (const b of boundaries || []) {
+    if (b.value < minV) minV = b.value;
+    if (b.value > maxV) maxV = b.value;
+  }
+  const pad = (maxV - minV) * 0.1 || 1;
+  const paddedMin = minV - pad;
+  const paddedMax = maxV + pad;
+  const range = paddedMax - paddedMin || 1;
+  const pts = data.map((p, i) => ({
+    x: P.left + (i / (data.length - 1)) * chartW,
+    y: P.top + chartH - ((p.v - paddedMin) / range) * chartH,
+    v: p.v, t: p.t, c: p.v,
+  }));
+
+  const segments = [];
+  let curColor = zoneColorFor(data[0].v);
+  let curPts = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const col = zoneColorFor(data[i].v);
+    if (col !== curColor) {
+      curPts.push(pts[i]);
+      if (curPts.length >= 2) segments.push({ color: curColor, pts: curPts });
+      curPts = [pts[i]];
+      curColor = col;
+    } else {
+      curPts.push(pts[i]);
+    }
+  }
+  if (curPts.length >= 2) segments.push({ color: curColor, pts: curPts });
+
+  let segSvg = '';
+  for (const s of segments) {
+    segSvg += `<path d="${monotoneCubicPath(s.pts)}" fill="none" stroke="${s.color}"` +
+      ` stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+
+  const fillColor = zoneColorFor(data[data.length - 1].v);
+  const fillId = `${uid}-fill`;
+  const linePath = monotoneCubicPath(pts);
+  const fillPath = linePath +
+    ` L${pts[pts.length - 1].x.toFixed(2)},${(P.top + chartH).toFixed(2)}` +
+    ` L${pts[0].x.toFixed(2)},${(P.top + chartH).toFixed(2)} Z`;
+
+  let boundSvg = '';
+  for (const b of boundaries || []) {
+    const y = P.top + chartH - ((b.value - paddedMin) / range) * chartH;
+    boundSvg += `<line x1="${P.left}" y1="${y.toFixed(2)}" x2="${(P.left + chartW).toFixed(2)}"` +
+      ` y2="${y.toFixed(2)}" stroke="${b.color}" stroke-width="1" stroke-opacity="0.35" stroke-dasharray="4 4"/>`;
+  }
+
+  const dark = isDark();
+  let tipHtml = null;
+  if (scrub) {
+    const label = zoneLabelFor ? zoneLabelFor(scrub.v) : '';
+    const color = zoneColorFor(scrub.v);
+    tipHtml =
+      `<div class="mm__tooltip-date">${formatTooltipDate(scrub.t)}</div>` +
+      `<div class="ih-spark__tip-val"><span class="ih-spark__dot" style="background:${color}"></span>` +
+      `<span class="mm__tooltip-price">${formatValue(scrub.v)}</span></div>` +
+      (label ? `<div class="mm__tooltip-date">${escapeHtml(label)}</div>` : '');
+  }
+  const tip = placeTooltip(
+    tipEl,
+    scrub ? { ...scrub, html: tipHtml, price: scrub.v } : null,
+    width, fillColor, P, chartH, dark,
+  );
+  const inner =
+    `<defs><linearGradient id="${fillId}" x1="0" y1="${P.top}" x2="0" y2="${P.top + chartH}" gradientUnits="userSpaceOnUse">` +
+      `<stop offset="0%" stop-color="${fillColor}" stop-opacity="0.14"/>` +
+      `<stop offset="100%" stop-color="${fillColor}" stop-opacity="0"/>` +
+    `</linearGradient></defs>` +
+    `<path d="${fillPath}" fill="url(#${fillId})"/>` +
+    boundSvg + segSvg;
+  paintStageShell(host, width, height, uid, playEntrance, false, inner, tip.scrubSvg, tip.scrubDefs);
+  return { pts, chartW, chartH, P, width, height };
+}
+
+function paintSparkForKind(kind, canvas, tip, playEntrance) {
+  const spec = sparkSpec(kind);
+  const geom = paintIndicatorSparkline(canvas, tip, {
+    ...spec,
+    scrub: canvas._ihScrub || null,
+    uid: `ih-${kind}`,
+    playEntrance: !!playEntrance,
+  });
+  canvas._ihGeom = geom;
+  canvas._ihSpec = spec;
+  return geom;
+}
+
+function wireSparkScrub(wrap, kind, canvas, tip) {
+  let active = false;
+  let moved = false;
+  let startX = 0;
+  const canHover = () => {
+    try { return window.matchMedia('(hover: hover) and (pointer: fine)').matches; }
+    catch (e) { return false; }
+  };
+  const scrubAt = (clientX) => {
+    const geom = canvas._ihGeom;
+    if (!geom || !geom.pts || !geom.pts.length) return;
+    const crect = canvas.getBoundingClientRect();
+    const x = clientX - crect.left;
+    let best = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < geom.pts.length; i++) {
+      const d = Math.abs(geom.pts[i].x - x);
+      if (d < bestDist) { bestDist = d; best = i; }
+    }
+    const p = geom.pts[best];
+    canvas._ihScrub = { i: best, x: p.x, y: p.y, v: p.v, t: p.t, price: p.v };
+    paintSparkForKind(kind, canvas, tip, false);
+  };
+  const endScrub = () => {
+    if (!canvas._ihScrub) return;
+    canvas._ihScrub = null;
+    paintSparkForKind(kind, canvas, tip, false);
+  };
+  wrap.addEventListener('pointerdown', (e) => {
+    if (!canvas._ihGeom) return;
+    active = true;
+    moved = false;
+    startX = e.clientX;
+    const card = wrap.closest('.ih-card');
+    if (card) card.classList.add('is-scrubbing');
+    try { wrap.setPointerCapture(e.pointerId); } catch (err) {}
+    scrubAt(e.clientX);
+    e.stopPropagation();
+  });
+  wrap.addEventListener('pointermove', (e) => {
+    if (!canvas._ihGeom) return;
+    if (Math.abs(e.clientX - startX) > 4) moved = true;
+    if (!active && canHover() && e.buttons === 0) {
+      scrubAt(e.clientX);
+      return;
+    }
+    if (!active) return;
+    scrubAt(e.clientX);
+  });
+  const onUp = () => {
+    if (!active) return;
+    active = false;
+    const card = wrap.closest('.ih-card');
+    if (card) card.classList.remove('is-scrubbing');
+    if (moved) wrap._didScrub = true;
+    if (!canHover()) endScrub();
+  };
+  wrap.addEventListener('pointerup', onUp);
+  wrap.addEventListener('pointercancel', onUp);
+  wrap.addEventListener('pointerleave', () => {
+    active = false;
+    endScrub();
+  });
+  wrap.addEventListener('click', (e) => {
+    if (wrap._didScrub || moved) {
+      e.preventDefault();
+      e.stopPropagation();
+      wrap._didScrub = false;
+    }
+  });
+}
+
+function hydrateIndicatorSparks() {
+  const root = $('market');
+  if (!root) return;
+  root.querySelectorAll('[data-ih-spark]').forEach((wrap) => {
+    const kind = wrap.dataset.ihSpark;
+    const canvas = wrap.querySelector('.ih-spark__canvas');
+    const tip = wrap.querySelector('.ih-spark__tip');
+    if (!canvas || !kind) return;
+    const play = !ihSparkPlayed[kind] && !prefersReducedMotion();
+    const paint = () => {
+      const geom = paintSparkForKind(kind, canvas, tip, play && !ihSparkPlayed[kind]);
+      if (geom && play) ihSparkPlayed[kind] = true;
+    };
+    paint();
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => paintSparkForKind(kind, canvas, tip, false));
+      ro.observe(wrap);
+    }
+    wireSparkScrub(wrap, kind, canvas, tip);
+  });
 }
 
 async function loadMarket() {
@@ -4411,9 +4621,25 @@ async function loadMarket() {
       if (typeof d.value === 'number') {
         marketData.mvrv = d.value;
         marketData.mvrvAt = Date.now();
-        renderMarket();
       }
+      if (Array.isArray(d.history) && d.history.length >= 2 && !(marketData.mvrvHistory && marketData.mvrvHistory.length >= 2)) {
+        marketData.mvrvHistory = d.history
+          .filter((p) => isFinite(p.t) && isFinite(p.v))
+          .map((p) => ({ t: p.t, v: p.v }));
+      }
+      renderMarket();
     }).catch(() => {});
+  loadFngHistory().then((points) => {
+    marketData.fngHistory = (points || []).map((p) => ({ t: p.t, v: p.v }));
+    renderMarket();
+  }).catch(() => {});
+  loadMvrvHistory().then((points) => {
+    if (points && points.length >= 2) {
+      marketData.mvrvHistory = points;
+      if (marketData.mvrv == null) marketData.mvrv = points[points.length - 1].v;
+      renderMarket();
+    }
+  }).catch(() => {});
 }
 
 // ── Indicator info modal (parity with app/indicator-info.tsx) ─────────
@@ -5632,11 +5858,37 @@ function bindProgressiveImg(wrap) {
   }
 }
 
+// Cover parallax: the header image lags behind scroll (feed cards + post/lesson modal).
+let parallaxRaf = 0;
+function applyCoverParallax() {
+  if (prefersReducedMotion()) return;
+  const covers = document.querySelectorAll('.lazy-img.card__cover, .lazy-img.modal__cover');
+  if (!covers.length) return;
+  const vh = window.innerHeight || 1;
+  for (let i = 0; i < covers.length; i++) {
+    const cover = covers[i];
+    const rect = cover.getBoundingClientRect();
+    if (rect.bottom < -80 || rect.top > vh + 80) continue;
+    const progress = (vh - rect.top) / (vh + rect.height || 1);
+    const maxShift = rect.height * 0.12;
+    const shift = (Math.min(1, Math.max(0, progress)) - 0.5) * 2 * maxShift;
+    cover.style.setProperty('--parallax', `${shift.toFixed(1)}px`);
+  }
+}
+function scheduleCoverParallax() {
+  if (parallaxRaf) return;
+  parallaxRaf = requestAnimationFrame(() => {
+    parallaxRaf = 0;
+    applyCoverParallax();
+  });
+}
+
 /** After innerHTML with progressive images, attach load handlers. */
 function hydrateLazyImages(root) {
   if (!root) return;
   root.querySelectorAll('.lazy-img').forEach(bindProgressiveImg);
   hydrateCarousels(root);
+  scheduleCoverParallax();
 }
 
 function hydrateCarousels(root) {
@@ -8984,6 +9236,7 @@ window.addEventListener('scroll', () => {
   // Tooltip is position:fixed to the tap point — hide on scroll so it does not drift.
   if ($('glossary-tooltip-root') && !$('glossary-tooltip-root').hidden) hideGlossaryTooltip();
   if (currentView === 'glossary') updateGlossaryScrollSpy();
+  scheduleCoverParallax();
 }, { capture: true, passive: true });
 document.querySelectorAll('#menu-lang button').forEach((b) =>
   b.addEventListener('click', () => onLangChange(b.dataset.lang)));
@@ -9061,6 +9314,11 @@ $('ios-banner-close').addEventListener('click', () => {
   $('ios-banner').classList.add('hidden');
   localStorage.setItem('cb-banner-dismissed', '1');
 });
+const modalScroll = $('modal-content');
+if (modalScroll) modalScroll.addEventListener('scroll', scheduleCoverParallax, { passive: true });
+const lessonScroll = $('lesson-panel-content');
+if (lessonScroll) lessonScroll.addEventListener('scroll', scheduleCoverParallax, { passive: true });
+window.addEventListener('resize', scheduleCoverParallax);
 $('modal-close').addEventListener('click', () => closeModal());
 $('modal-backdrop').addEventListener('click', () => closeModal());
 $('modal-share').addEventListener('click', shareCurrent);
@@ -9068,13 +9326,16 @@ $('modal-complete').addEventListener('click', toggleLessonComplete);
 $('lesson-panel-close').addEventListener('click', () => closeModal());
 $('lesson-panel-share').addEventListener('click', shareCurrent);
 $('lesson-panel-complete').addEventListener('click', toggleLessonComplete);
-// Market indicators card → info modal (app FearGreedWidget → /indicator-info)
-$('market').addEventListener('click', openIndicatorModal);
+// Market indicator cards → info modal (app IndicatorHistoryCard → /indicator-info)
+$('market').addEventListener('click', (e) => {
+  if (!e.target.closest('.ih-card')) return;
+  openIndicatorModal();
+});
 $('market').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' || e.key === ' ') {
-    e.preventDefault();
-    openIndicatorModal();
-  }
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  if (!e.target.closest('.ih-card')) return;
+  e.preventDefault();
+  openIndicatorModal();
 });
 $('indicator-modal-close').addEventListener('click', closeIndicatorModal);
 $('indicator-modal-backdrop').addEventListener('click', closeIndicatorModal);

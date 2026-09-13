@@ -1490,6 +1490,33 @@ body.modal-open {
   width: 100%;
   aspect-ratio: 14 / 9;
 }
+/* Post header parallax: extra image height so translateY has room to travel. */
+.lazy-img.card__cover .lazy-img__full,
+.lazy-img.modal__cover .lazy-img__full {
+  height: 130%;
+  top: -15%;
+  bottom: auto;
+  will-change: transform;
+  transform: translate3d(0, var(--parallax, 0px), 0);
+}
+.lazy-img.card__cover .lazy-img__thumb,
+.lazy-img.modal__cover .lazy-img__thumb {
+  height: 130%;
+  top: -15%;
+  bottom: auto;
+  will-change: transform;
+  transform: translate3d(0, var(--parallax, 0px), 0) scale(1.08);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lazy-img.card__cover .lazy-img__full,
+  .lazy-img.modal__cover .lazy-img__full {
+    height: 100%; top: 0; will-change: auto; transform: none;
+  }
+  .lazy-img.card__cover .lazy-img__thumb,
+  .lazy-img.modal__cover .lazy-img__thumb {
+    height: 100%; top: 0; will-change: auto; transform: scale(1.08);
+  }
+}
 /* Content figures: 16/9 placeholder until JS sets the decoded ratio. */
 .nb-figure .lazy-img {
   width: 100%;
@@ -2259,39 +2286,82 @@ body.modal-open {
 }
 .nb-widget-unsupported svg { flex: 0 0 auto; opacity: 0.7; }
 
-/* ── Market widget (Fear & Greed + MVRV) ───────────────────────────── */
-/* Parity with FearGreedWidget.tsx (glass card + dual gauge sections). */
+/* ── Market widget (Fear & Greed + MVRV history cards) ─────────────── */
+/* Parity with IndicatorHistoryCard + IndicatorSparkline (app indicadores). */
 .market {
-  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
   margin: 12px var(--pad-screen) 0;
-  background: var(--surface); border: 1px solid var(--inner-border);
-  border-radius: var(--radius-card); padding: var(--space-md);
-  display: flex; align-items: stretch; overflow: hidden;
+}
+.ih-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--inner-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-md);
   cursor: pointer;
   transition: transform 0.15s ease, background 0.15s ease;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
-.market:hover { background: color-mix(in srgb, var(--surface) 92%, var(--text) 8%); }
-.market:active { transform: scale(0.97); }
-.market:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.market__info {
-  position: absolute; top: var(--space-sm); right: var(--space-sm); z-index: 1;
-  width: 16px; height: 16px; color: var(--divider); pointer-events: none;
+.ih-card:hover { background: color-mix(in srgb, var(--surface) 92%, var(--text) 8%); }
+.ih-card:active { transform: scale(0.97); }
+.ih-card.is-scrubbing,
+.ih-card.is-scrubbing:active { transform: none; }
+.ih-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ih-card__head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: var(--space-sm);
+}
+.ih-card__title {
+  font-size: 15px; font-weight: 600; line-height: 20px; color: var(--text);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ih-card__info {
+  flex: 0 0 auto; width: 18px; height: 18px; color: var(--text-tertiary);
   display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
 }
-.market__info svg { width: 16px; height: 16px; display: block; }
-.market__sections { display: flex; align-items: stretch; flex: 1; width: 100%; }
-.market__section { flex: 1; display: flex; flex-direction: column; align-items: center; }
-.market__divider { width: 1px; align-self: stretch; margin: 0 12px; background: var(--divider); }
-.market__title {
-  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
-  color: var(--text-tertiary); margin-bottom: var(--space-sm); text-align: center;
+.ih-card__info svg { width: 18px; height: 18px; display: block; }
+.ih-card__value-row {
+  display: flex; align-items: center; gap: var(--space-sm);
+  margin-bottom: var(--space-xs); min-width: 0;
 }
-.gauge-row { display: flex; align-items: center; gap: var(--space-sm); }
-.gauge-marker { stroke: var(--surface); }
-.market__value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
-.market__label { font-size: 12px; font-weight: 600; margin-top: var(--space-xs); text-align: center; }
+.ih-card__value {
+  font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums;
+  line-height: 1.15; letter-spacing: -0.4px;
+}
+.ih-card__pill {
+  padding: 3px 8px; border-radius: 8px;
+  font-size: 11px; font-weight: 600; line-height: 14px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+}
+.ih-spark {
+  position: relative;
+  height: 76px;
+  margin-top: var(--space-xs);
+  overflow: visible;
+  touch-action: none;
+}
+.ih-spark__canvas { width: 100%; height: 76px; }
+.ih-spark__canvas .pc__stage { width: 100%; height: 100%; }
+.ih-spark__sk {
+  width: 100%; height: 76px; border-radius: 8px;
+  background: var(--skeleton); animation: pulse 1.4s ease-in-out infinite;
+}
+.ih-spark__tip { /* reuses .mm__tooltip */ }
+.ih-spark__tip-val { display: flex; align-items: center; gap: 5px; margin-top: 2px; }
+.ih-spark__dot { width: 6px; height: 6px; border-radius: 3px; flex: 0 0 auto; }
+@media (hover: hover) and (pointer: fine) {
+  .ih-spark { cursor: crosshair; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ih-card { transition: none; }
+  .ih-card:active { transform: none; }
+  .ih-spark__sk { animation: none; }
+}
 
 /* Indicator info modal — compact sheet (app indicator-info / FormSheetContent) */
 .imodal {
