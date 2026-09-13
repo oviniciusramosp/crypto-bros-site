@@ -40,6 +40,7 @@ Repo é **público** porque o GitHub Pages no plano Free exige repo público —
 | `GET /web/glossary`         | Glossário (termos + alt + definição; por idioma)     |
 | `GET /web/mvrv`             | MVRV Z-Score (proxy CoinMetrics — CORS)             |
 | `GET /web/fng`              | Fear & Greed (proxy alternative.me — CORS)          |
+| `GET /web/poly`             | Polymarket (`?slug=` / `?url=`) — séries por outcome |
 
 **Precisa de um dado novo, ou mudar o shape de um existente?** A mudança é em **`crypto-bros-api`** primeiro (`wrangler deploy`), e só depois aqui. Não tente contornar no cliente.
 

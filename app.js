@@ -3161,6 +3161,110 @@ function paintCycleChart(host, tipEl, opts) {
   return { pts, chartW, chartH, P, width, height, kind: 'cycle', cycleLines, maxDay, toX, toY };
 }
 
+function nearestPolyPoint(history, t) {
+  if (!history || !history.length) return null;
+  let lo = 0, hi = history.length - 1;
+  if (t <= history[0].t) return history[0];
+  if (t >= history[hi].t) return history[hi];
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    if (history[mid].t === t) return history[mid];
+    if (history[mid].t < t) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  const a = history[Math.max(0, hi)];
+  const b = history[Math.min(history.length - 1, lo)];
+  return Math.abs(a.t - t) <= Math.abs(b.t - t) ? a : b;
+}
+
+function paintPolyChart(host, tipEl, opts) {
+  const {
+    outcomes, height, pad = CHART_PAD_INLINE,
+    scrub = null, uid = 'py', playEntrance = false, legendEl = null,
+  } = opts;
+  const width = host.clientWidth || host.parentElement?.clientWidth || 360;
+  if (!outcomes || !outcomes.length) {
+    host.innerHTML = `<div class="pc__fallback">${I18N.t('widget.chartError')}</div>`;
+    if (tipEl) tipEl.classList.add('hidden');
+    return null;
+  }
+  const LEGEND_H = outcomes.length > 4 ? 36 : 22;
+  const Y_AXIS_W = 36;
+  const P = { ...pad, bottom: pad.bottom + LEGEND_H, right: pad.right + Y_AXIS_W };
+  const chartW = Math.max(1, width - P.left - P.right);
+  const chartH = Math.max(1, height - P.top - P.bottom);
+
+  let minT = Infinity, maxT = -Infinity;
+  for (const o of outcomes) {
+    for (const p of o.history) {
+      if (p.t < minT) minT = p.t;
+      if (p.t > maxT) maxT = p.t;
+    }
+  }
+  const tSpan = maxT - minT || 1;
+  const toX = (t) => P.left + ((t - minT) / tSpan) * chartW;
+  const toY = (p) => P.top + chartH - (Math.max(0, Math.min(1, p)) * chartH);
+
+  let pathsSvg = '';
+  const midY = toY(0.5);
+  pathsSvg +=
+    `<line x1="${P.left}" y1="${midY.toFixed(2)}" x2="${(P.left + chartW).toFixed(2)}" y2="${midY.toFixed(2)}"` +
+    ` stroke="currentColor" stroke-opacity="0.12" stroke-dasharray="4 4"/>`;
+  for (const o of outcomes) {
+    if (o.history.length < 2) continue;
+    const pts = o.history.map((p) => ({ x: toX(p.t), y: toY(p.p) }));
+    pathsSvg +=
+      `<path d="${monotoneCubicPath(pts)}" fill="none" stroke="${o.color}"` +
+      ` stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+
+  const ticks = [0, 0.5, 1];
+  let ySvg = '';
+  for (const v of ticks) {
+    const y = toY(v);
+    ySvg +=
+      `<text x="${(P.left + chartW + 4).toFixed(2)}" y="${y.toFixed(2)}"` +
+      ` fill="currentColor" fill-opacity="0.45" font-size="9"` +
+      ` font-family="Inter, system-ui, sans-serif" dominant-baseline="middle">${Math.round(v * 100)}%</text>`;
+  }
+
+  if (legendEl) {
+    legendEl.innerHTML = outcomes.map((o) =>
+      `<span class="nb-chart__legend-item">` +
+        `<span class="nb-chart__legend-dot" style="background:${o.color}"></span>` +
+        `<span class="nb-chart__legend-label">${escapeHtml(o.label)}</span></span>`
+    ).join('');
+    legendEl.hidden = false;
+  }
+
+  const primary = outcomes[0];
+  const pts = primary.history.map((p) => ({
+    x: toX(p.t), y: toY(p.p), t: p.t, c: p.p * 100,
+  }));
+
+  const dark = isDark();
+  let tipHtml = null;
+  if (scrub && scrub.t != null) {
+    const rows = outcomes.map((o) => {
+      const hit = nearestPolyPoint(o.history, scrub.t);
+      if (!hit) return '';
+      return `<div class="nb-chart__tip-row">` +
+        `<span class="nb-chart__legend-dot" style="background:${o.color}"></span>` +
+        `<span class="mm__tooltip-date">${escapeHtml(o.label)}</span>` +
+        `<span class="mm__tooltip-price" style="margin-left:8px">${Math.round(hit.p * 100)}%</span>` +
+        `</div>`;
+    }).join('');
+    tipHtml = `<div class="mm__tooltip-date">${formatTooltipDate(scrub.t)}</div>` + rows;
+  }
+  const tip = placeTooltip(
+    tipEl,
+    scrub ? { ...scrub, html: tipHtml, price: scrub.c } : null,
+    width, primary.color, P, chartH, dark,
+  );
+  paintStageShell(host, width, height, uid, playEntrance, false, pathsSvg + ySvg, tip.scrubSvg, tip.scrubDefs);
+  return { pts, chartW, chartH, P, width, height, kind: 'poly', outcomes };
+}
+
 // ── Header label helpers ──────────────────────────────────────────────
 
 function formatChartSinceDate(dateStr) {
@@ -3690,6 +3794,59 @@ function parsePriceFromKV(asset, kv) {
   return { asset, date };
 }
 
+function extractPolySlug(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  try {
+    if (/^https?:\/\//i.test(s)) {
+      const u = new URL(s);
+      const parts = u.pathname.split('/').filter(Boolean);
+      const i = parts.findIndex((p) => p === 'event' || p === 'market');
+      if (i >= 0 && parts[i + 1]) return decodeURIComponent(parts[i + 1]).toLowerCase();
+      return null;
+    }
+  } catch (e) { return null; }
+  if (/^[a-z0-9][a-z0-9-]{1,200}$/i.test(s)) return s.toLowerCase();
+  return null;
+}
+
+/** Parse {{poly:slug|url;time:3m;date:now;outcomes:A,B;size:half}}. */
+function parsePolyWidget(content) {
+  const raw = String(content || '').trim();
+  if (!raw) return null;
+  let head = raw;
+  let rest = '';
+  const urlMatch = raw.match(/^(https?:\/\/[^\s;]+)(?:;(.*))?$/i);
+  if (urlMatch) {
+    head = urlMatch[1];
+    rest = urlMatch[2] || '';
+  } else {
+    const i = raw.indexOf(';');
+    if (i >= 0) { head = raw.slice(0, i); rest = raw.slice(i + 1); }
+  }
+  const slug = extractPolySlug(head);
+  if (!slug) return null;
+  const kv = {};
+  if (rest) {
+    for (const seg of rest.split(';')) {
+      const colonIdx = seg.indexOf(':');
+      if (colonIdx > 0) kv[seg.slice(0, colonIdx).toLowerCase()] = seg.slice(colonIdx + 1);
+    }
+  }
+  const date = kv.date || 'now';
+  if (!/^(now|\d{4}-\d{2}-\d{2})$/.test(date)) return null;
+  const timeRange = kv.time;
+  if (timeRange && !/^\d+[wmyd]$/i.test(timeRange)) return null;
+  const outcomes = (kv.outcomes || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return {
+    slug,
+    date,
+    size: kv.size === 'half' ? 'half' : 'full',
+    timeRange: timeRange || undefined,
+    outcomes: outcomes.length ? outcomes : undefined,
+  };
+}
+
 /** Parse a full plain-text paragraph/code into a widget descriptor, or null. */
 function tryParseWidget(rawText) {
   const full = normalizeWidgetSyntax(rawText).trim();
@@ -3711,6 +3868,11 @@ function tryParseWidget(rawText) {
     if (!priceParams) return { kind: 'unsupported' };
     return { kind: 'price', params: priceParams };
   }
+  if (widgetType === 'poly') {
+    const polyParams = parsePolyWidget(content);
+    if (!polyParams) return { kind: 'unsupported' };
+    return { kind: 'poly', params: polyParams };
+  }
   // Unknown future widget type
   return { kind: 'unsupported' };
 }
@@ -3720,6 +3882,14 @@ function unsupportedWidgetHtml() {
     `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">` +
     `<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>` +
     `<span>${I18N.t('widget.unsupported')}</span></div>`;
+}
+
+function polyEmbedPlaceholder(params) {
+  const payload = escapeHtml(JSON.stringify(params));
+  const heightClass = params.size === 'half' ? ' nb-chart--half' : '';
+  return `<div class="nb-chart nb-chart--poly${heightClass}" data-nb-poly="${payload}"` +
+    ` role="img" aria-label="Polymarket chart">` +
+    `<div class="nb-chart__sk"></div></div>`;
 }
 
 function chartEmbedPlaceholder(params) {
@@ -3746,7 +3916,7 @@ function chartEmbedPlaceholder(params) {
 /** App NotionRenderer groupHalfCharts: price widgets always half; charts when size:half. */
 function isHalfWidthWidget(kind, params) {
   if (kind === 'price') return true;
-  if (kind === 'chart') return !!(params && params.size === 'half');
+  if (kind === 'chart' || kind === 'poly') return !!(params && params.size === 'half');
   return false;
 }
 
@@ -3849,6 +4019,12 @@ function paintInlineChart(el, opts) {
     st.geom = paintCycleChart(canvas, tip, {
       ...common,
       cycleLines: st.cycleLines,
+      pad: CHART_PAD_INLINE,
+    });
+  } else if (type === 'poly') {
+    st.geom = paintPolyChart(canvas, tip, {
+      ...common,
+      outcomes: st.outcomes,
       pad: CHART_PAD_INLINE,
     });
   } else {
@@ -4218,10 +4394,64 @@ async function mountInlinePrice(el) {
     `</div>`;
 }
 
+async function mountInlinePoly(el) {
+  if (!el || el.dataset.mounted === '1') return;
+  el.dataset.mounted = '1';
+  let params;
+  try { params = JSON.parse(el.getAttribute('data-nb-poly') || '{}'); } catch (e) { return; }
+  const slug = params && params.slug;
+  if (!slug) {
+    el.outerHTML = unsupportedWidgetHtml();
+    return;
+  }
+  const days = params.timeRange ? resolveTimeRangeDays(params.timeRange) : 365;
+  const uid = 'nb-' + (el.dataset.uid || Math.random().toString(36).slice(2, 8));
+  const qs = new URLSearchParams({ slug, days: String(days) });
+  if (params.outcomes && params.outcomes.length) qs.set('outcomes', params.outcomes.join(','));
+  try {
+    const res = await fetch(`${CONFIG.workerBase}/web/poly?${qs.toString()}`);
+    if (!res.ok) throw new Error('poly http');
+    const data = await res.json();
+    if (!el.isConnected) return;
+    const outcomes = Array.isArray(data.outcomes) ? data.outcomes : [];
+    if (outcomes.length < 1) throw new Error('empty poly');
+    const top = outcomes[0];
+    const pct = isFinite(top.price) ? Math.round(top.price * 100) : null;
+    const title = escapeHtml(data.title || slug);
+    const href = data.url ? escapeHtml(data.url) : '';
+    const titleHtml = href
+      ? `<a class="nb-chart__title" href="${href}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${title}</a>`
+      : `<div class="nb-chart__title">${title}</div>`;
+    const pctHtml = pct != null
+      ? `<div class="nb-chart__pct">${pct}% ${escapeHtml(top.label)}</div>`
+      : '';
+    const headHtml = `<div class="nb-chart__head">${titleHtml}${pctHtml}</div>`;
+    el._nbState = {
+      chartType: 'poly',
+      outcomes,
+      accent: top.color || '#3B82F6',
+      height: chartHeightFor({ size: params.size }),
+      uid, scrub: null, geom: null,
+    };
+    el.style.height = '';
+    el.classList.add('nb-chart--with-head', 'nb-chart--poly');
+    shellInlineChart(el, headHtml);
+    requestAnimationFrame(() => {
+      if (!el.isConnected) return;
+      paintInlineChart(el, { playEntrance: true });
+      wireInlineChartResize(el);
+    });
+  } catch (e) {
+    if (!el.isConnected) return;
+    el.innerHTML = `<div class="pc__fallback">${I18N.t('widget.chartError')}</div>`;
+  }
+}
+
 function hydrateWidgets(root) {
   if (!root) return;
   root.querySelectorAll('[data-nb-chart]').forEach((el) => { mountInlineChart(el); });
   root.querySelectorAll('[data-nb-price]').forEach((el) => { mountInlinePrice(el); });
+  root.querySelectorAll('[data-nb-poly]').forEach((el) => { mountInlinePoly(el); });
 }
 
 // ── Market widget (Fear & Greed + MVRV) ───────────────────────────────
@@ -6143,7 +6373,9 @@ function renderBlocks(blocks, skipFirstDivider) {
       ? chartEmbedPlaceholder(params)
       : kind === 'price'
         ? priceWidgetPlaceholder(params)
-        : unsupportedWidgetHtml();
+        : kind === 'poly'
+          ? polyEmbedPlaceholder(params)
+          : unsupportedWidgetHtml();
     if (kind === 'unsupported' || !isHalfWidthWidget(kind, params)) {
       flushHalf();
       html += piece;
@@ -6179,7 +6411,7 @@ function renderBlocks(blocks, skipFirstDivider) {
         const plain = plainFromBlock(b);
         const widget = tryParseWidget(plain);
         if (widget) {
-          if (widget.kind === 'chart' || widget.kind === 'price') emitWidget(widget.kind, widget.params);
+          if (widget.kind === 'chart' || widget.kind === 'price' || widget.kind === 'poly') emitWidget(widget.kind, widget.params);
           else { flushHalf(); html += unsupportedWidgetHtml(); }
           break;
         }
@@ -6239,7 +6471,7 @@ function renderBlocks(blocks, skipFirstDivider) {
         const codePlain = (b.code && b.code.rich_text || []).map((r) => r.plain_text || '').join('');
         const codeWidget = tryParseWidget(codePlain);
         if (codeWidget) {
-          if (codeWidget.kind === 'chart' || codeWidget.kind === 'price') emitWidget(codeWidget.kind, codeWidget.params);
+          if (codeWidget.kind === 'chart' || codeWidget.kind === 'price' || codeWidget.kind === 'poly') emitWidget(codeWidget.kind, codeWidget.params);
           else { flushHalf(); html += unsupportedWidgetHtml(); }
           break;
         }
@@ -6254,6 +6486,10 @@ function renderBlocks(blocks, skipFirstDivider) {
         break;
       case 'price_widget':
         if (b.priceWidgetParams) emitWidget('price', b.priceWidgetParams);
+        else { flushHalf(); html += unsupportedWidgetHtml(); }
+        break;
+      case 'poly_embed':
+        if (b.polyParams) emitWidget('poly', b.polyParams);
         else { flushHalf(); html += unsupportedWidgetHtml(); }
         break;
       case 'unsupported_widget':

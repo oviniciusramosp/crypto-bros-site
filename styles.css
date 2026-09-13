@@ -2227,6 +2227,17 @@ body.modal-open {
   border-radius: 4px;
   flex: 0 0 auto;
 }
+.nb-chart--poly .nb-chart__legend {
+  height: auto;
+  min-height: 20px;
+  max-height: 40px;
+  bottom: 2px;
+}
+.nb-chart__head a.nb-chart__title {
+  color: inherit;
+  text-decoration: none;
+}
+.nb-chart__head a.nb-chart__title:hover { text-decoration: underline; }
 .nb-chart__legend-label {
   font-size: 10px;
   line-height: 12px;
