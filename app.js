@@ -3181,6 +3181,7 @@ function paintPolyChart(host, tipEl, opts) {
   const {
     outcomes, height, pad = CHART_PAD_INLINE,
     scrub = null, uid = 'py', playEntrance = false, legendEl = null,
+    liveDot = false,
   } = opts;
   const width = host.clientWidth || host.parentElement?.clientWidth || 360;
   if (!outcomes || !outcomes.length) {
@@ -3188,59 +3189,71 @@ function paintPolyChart(host, tipEl, opts) {
     if (tipEl) tipEl.classList.add('hidden');
     return null;
   }
-  const LEGEND_H = outcomes.length > 4 ? 36 : 22;
-  const Y_AXIS_W = 36;
-  const P = { ...pad, bottom: pad.bottom + LEGEND_H, right: pad.right + Y_AXIS_W };
+  const hasLegend = outcomes.length > 1;
+  const P = hasLegend
+    ? { ...pad, bottom: pad.bottom + EMA_LEGEND_RESERVED_HEIGHT }
+    : pad;
   const chartW = Math.max(1, width - P.left - P.right);
   const chartH = Math.max(1, height - P.top - P.bottom);
 
   let minT = Infinity, maxT = -Infinity;
+  let minV = Infinity, maxV = -Infinity;
   for (const o of outcomes) {
     for (const p of o.history) {
+      const v = p.p * 100;
       if (p.t < minT) minT = p.t;
       if (p.t > maxT) maxT = p.t;
+      if (v < minV) minV = v;
+      if (v > maxV) maxV = v;
     }
   }
   const tSpan = maxT - minT || 1;
+  const padV = (maxV - minV) * PRICE_PADDING_RATIO || 1;
+  const paddedMin = minV - padV;
+  const paddedMax = maxV + padV;
+  const range = paddedMax - paddedMin || 1;
   const toX = (t) => P.left + ((t - minT) / tSpan) * chartW;
-  const toY = (p) => P.top + chartH - (Math.max(0, Math.min(1, p)) * chartH);
+  const toY = (pct) => P.top + chartH - ((pct - paddedMin) / range) * chartH;
 
-  let pathsSvg = '';
-  const midY = toY(0.5);
-  pathsSvg +=
-    `<line x1="${P.left}" y1="${midY.toFixed(2)}" x2="${(P.left + chartW).toFixed(2)}" y2="${midY.toFixed(2)}"` +
-    ` stroke="currentColor" stroke-opacity="0.12" stroke-dasharray="4 4"/>`;
-  for (const o of outcomes) {
+  const primary = outcomes[0];
+  if (!primary.history || primary.history.length < 2) {
+    host.innerHTML = `<div class="pc__fallback">${I18N.t('widget.chartError')}</div>`;
+    if (tipEl) tipEl.classList.add('hidden');
+    return null;
+  }
+  const pts = primary.history.map((p) => ({
+    x: toX(p.t), y: toY(p.p * 100), t: p.t, c: p.p * 100,
+  }));
+  const linePath = monotoneCubicPath(pts);
+  const last = pts[pts.length - 1];
+  const fillPath = linePath +
+    ` L${last.x.toFixed(2)},${(P.top + chartH).toFixed(2)}` +
+    ` L${pts[0].x.toFixed(2)},${(P.top + chartH).toFixed(2)} Z`;
+  const accent = primary.color;
+
+  let extraSvg = '';
+  for (let i = 1; i < outcomes.length; i++) {
+    const o = outcomes[i];
     if (o.history.length < 2) continue;
-    const pts = o.history.map((p) => ({ x: toX(p.t), y: toY(p.p) }));
-    pathsSvg +=
-      `<path d="${monotoneCubicPath(pts)}" fill="none" stroke="${o.color}"` +
+    const epts = o.history.map((p) => ({ x: toX(p.t), y: toY(p.p * 100) }));
+    extraSvg +=
+      `<path d="${monotoneCubicPath(epts)}" fill="none" stroke="${o.color}"` +
       ` stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
   }
 
-  const ticks = [0, 0.5, 1];
-  let ySvg = '';
-  for (const v of ticks) {
-    const y = toY(v);
-    ySvg +=
-      `<text x="${(P.left + chartW + 4).toFixed(2)}" y="${y.toFixed(2)}"` +
-      ` fill="currentColor" fill-opacity="0.45" font-size="9"` +
-      ` font-family="Inter, system-ui, sans-serif" dominant-baseline="middle">${Math.round(v * 100)}%</text>`;
-  }
-
   if (legendEl) {
-    legendEl.innerHTML = outcomes.map((o) =>
-      `<span class="nb-chart__legend-item">` +
-        `<span class="nb-chart__legend-dot" style="background:${o.color}"></span>` +
-        `<span class="nb-chart__legend-label">${escapeHtml(o.label)}</span></span>`
-    ).join('');
-    legendEl.hidden = false;
+    if (hasLegend) {
+      legendEl.innerHTML = outcomes.map((o) =>
+        `<span class="nb-chart__legend-item">` +
+          `<span class="nb-chart__legend-line" style="background:${o.color}"></span>` +
+          `<span class="nb-chart__legend-label">${escapeHtml(o.label)}</span></span>`
+      ).join('');
+      legendEl.hidden = false;
+    } else {
+      legendEl.innerHTML = '';
+      legendEl.hidden = true;
+    }
   }
-
-  const primary = outcomes[0];
-  const pts = primary.history.map((p) => ({
-    x: toX(p.t), y: toY(p.p), t: p.t, c: p.p * 100,
-  }));
 
   const dark = isDark();
   let tipHtml = null;
@@ -3259,9 +3272,39 @@ function paintPolyChart(host, tipEl, opts) {
   const tip = placeTooltip(
     tipEl,
     scrub ? { ...scrub, html: tipHtml, price: scrub.c } : null,
-    width, primary.color, P, chartH, dark,
+    width, accent, P, chartH, dark,
   );
-  paintStageShell(host, width, height, uid, playEntrance, false, pathsSvg + ySvg, tip.scrubSvg, tip.scrubDefs);
+
+  const dotsId = `${uid}-dots`;
+  const fadeId = `${uid}-fade`;
+  const fadeMaskId = `${uid}-fade-mask`;
+  const fillClipId = `${uid}-fill-clip`;
+  const half = DOT_SPACING / 2;
+  const inner =
+    `<defs>` +
+      `<pattern id="${dotsId}" width="${DOT_SPACING}" height="${DOT_SPACING}" patternUnits="userSpaceOnUse">` +
+        `<circle cx="${half}" cy="${half}" r="${DOT_RADIUS}" fill="${accent}"/>` +
+      `</pattern>` +
+      `<linearGradient id="${fadeId}" x1="0" y1="${P.top}" x2="0" y2="${P.top + chartH}" gradientUnits="userSpaceOnUse">` +
+        `<stop offset="0%" stop-color="#fff" stop-opacity="0.5"/>` +
+        `<stop offset="100%" stop-color="#fff" stop-opacity="0"/>` +
+      `</linearGradient>` +
+      `<mask id="${fadeMaskId}" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}">` +
+        `<rect x="0" y="0" width="${width}" height="${height}" fill="url(#${fadeId})"/>` +
+      `</mask>` +
+      `<clipPath id="${fillClipId}"><path d="${fillPath}"/></clipPath>` +
+    `</defs>` +
+    `<g clip-path="url(#${fillClipId})" mask="url(#${fadeMaskId})">` +
+      `<rect x="0" y="0" width="${width}" height="${height}" fill="url(#${dotsId})"/>` +
+    `</g>` +
+    extraSvg +
+    `<path d="${linePath}" fill="none" stroke="${accent}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>` +
+    (liveDot
+      ? `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="3.5" fill="${accent}"/>` +
+        `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="2" fill="${dark ? '#000' : '#fff'}"/>`
+      : `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="3" fill="${accent}"/>`);
+
+  paintStageShell(host, width, height, uid, playEntrance, false, inner, tip.scrubSvg, tip.scrubDefs);
   return { pts, chartW, chartH, P, width, height, kind: 'poly', outcomes };
 }
 
@@ -4026,6 +4069,7 @@ function paintInlineChart(el, opts) {
       ...common,
       outcomes: st.outcomes,
       pad: CHART_PAD_INLINE,
+      liveDot: !!st.live,
     });
   } else {
     // line (default)
@@ -4419,18 +4463,29 @@ async function mountInlinePoly(el) {
     const pct = isFinite(top.price) ? Math.round(top.price * 100) : null;
     const title = escapeHtml(data.title || slug);
     const href = data.url ? escapeHtml(data.url) : '';
-    const titleHtml = href
-      ? `<a class="nb-chart__title" href="${href}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${title}</a>`
-      : `<div class="nb-chart__title">${title}</div>`;
+    const timeLabel = escapeHtml(resolvePrimaryLabel({ timeRange: params.timeRange }, days));
+    const titleInner = href
+      ? `<a href="${href}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${title}</a>`
+      : title;
     const pctHtml = pct != null
       ? `<div class="nb-chart__pct">${pct}% ${escapeHtml(top.label)}</div>`
       : '';
-    const headHtml = `<div class="nb-chart__head">${titleHtml}${pctHtml}</div>`;
+    const firstT = top.history && top.history[0] && top.history[0].t;
+    const sinceDateStr = firstT ? new Date(firstT).toISOString().slice(0, 10) : null;
+    const since = sinceDateStr ? formatChartSinceDate(sinceDateStr) : null;
+    const sinceHtml = since
+      ? `<div class="nb-chart__since">${escapeHtml(I18N.t('chart.since').replace('{date}', since))}</div>`
+      : '';
+    const headHtml = `<div class="nb-chart__head">` +
+      `<div class="nb-chart__title">${titleInner} <span class="nb-chart__sep">•</span> ${timeLabel}</div>` +
+      pctHtml + sinceHtml +
+    `</div>`;
     el._nbState = {
       chartType: 'poly',
       outcomes,
       accent: top.color || '#3B82F6',
       height: chartHeightFor({ size: params.size }),
+      live: params.date === 'now',
       uid, scrub: null, geom: null,
     };
     el.style.height = '';
