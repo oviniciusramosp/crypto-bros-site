@@ -3853,6 +3853,24 @@ function extractPolySlug(raw) {
   return null;
 }
 
+function defaultPolyColorName(label, index) {
+  const k = String(label || '').trim().toLowerCase();
+  if (k === 'yes' || k === 'sim' || k === 'up') return 'green';
+  if (k === 'no' || k === 'não' || k === 'nao' || k === 'down') return 'red';
+  const fallback = ['blue', 'green', 'orange', 'red', 'purple', 'cyan', 'pink', 'amber'];
+  return fallback[index % fallback.length];
+}
+
+function applyPolyDisplayColors(outcomes, colorNames) {
+  const names = Array.isArray(colorNames) ? colorNames : [];
+  if (!names.length) return outcomes || [];
+  return (outcomes || []).map((o, i) => {
+    const name = names[i] || defaultPolyColorName(o.label, i);
+    const hex = EMA_COLORS[name] || (/^#[0-9a-f]{6}$/i.test(name) ? name : o.color);
+    return { ...o, color: hex || o.color };
+  });
+}
+
 /** Parse {{poly:slug|url;time:3m;date:now;outcomes:A,B;size:half}}. */
 function parsePolyWidget(content) {
   const raw = String(content || '').trim();
@@ -3881,12 +3899,16 @@ function parsePolyWidget(content) {
   const timeRange = kv.time;
   if (timeRange && !/^\d+[wmyd]$/i.test(timeRange)) return null;
   const outcomes = (kv.outcomes || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const colors = (kv.color || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const title = (kv.title || '').replace(/;/g, ',').trim();
   return {
     slug,
     date,
     size: kv.size === 'half' ? 'half' : 'full',
     timeRange: timeRange || undefined,
     outcomes: outcomes.length ? outcomes : undefined,
+    title: title || undefined,
+    colors: colors.length ? colors : undefined,
   };
 }
 
@@ -4457,11 +4479,12 @@ async function mountInlinePoly(el) {
     if (!res.ok) throw new Error('poly http');
     const data = await res.json();
     if (!el.isConnected) return;
-    const outcomes = Array.isArray(data.outcomes) ? data.outcomes : [];
-    if (outcomes.length < 1) throw new Error('empty poly');
+    const rawOutcomes = Array.isArray(data.outcomes) ? data.outcomes : [];
+    if (rawOutcomes.length < 1) throw new Error('empty poly');
+    const outcomes = applyPolyDisplayColors(rawOutcomes, params.colors);
     const top = outcomes[0];
     const pct = isFinite(top.price) ? Math.round(top.price * 100) : null;
-    const title = escapeHtml(data.title || slug);
+    const title = escapeHtml(params.title || data.title || slug);
     const href = data.url ? escapeHtml(data.url) : '';
     const timeLabel = escapeHtml(resolvePrimaryLabel({ timeRange: params.timeRange }, days));
     const titleInner = href
