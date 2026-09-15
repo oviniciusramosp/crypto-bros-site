@@ -3239,6 +3239,11 @@ function paintPolyChart(host, tipEl, opts) {
     extraSvg +=
       `<path d="${monotoneCubicPath(epts)}" fill="none" stroke="${o.color}"` +
       ` stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+    const el = epts[epts.length - 1];
+    extraSvg += liveDot
+      ? `<circle cx="${el.x.toFixed(2)}" cy="${el.y.toFixed(2)}" r="3.5" fill="${o.color}"/>` +
+        `<circle cx="${el.x.toFixed(2)}" cy="${el.y.toFixed(2)}" r="2" fill="${isDark() ? '#000' : '#fff'}"/>`
+      : `<circle cx="${el.x.toFixed(2)}" cy="${el.y.toFixed(2)}" r="3" fill="${o.color}"/>`;
   }
 
   if (legendEl) {
