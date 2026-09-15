@@ -3197,21 +3197,16 @@ function paintPolyChart(host, tipEl, opts) {
   const chartH = Math.max(1, height - P.top - P.bottom);
 
   let minT = Infinity, maxT = -Infinity;
-  let minV = Infinity, maxV = -Infinity;
   for (const o of outcomes) {
     for (const p of o.history) {
-      const v = p.p * 100;
       if (p.t < minT) minT = p.t;
       if (p.t > maxT) maxT = p.t;
-      if (v < minV) minV = v;
-      if (v > maxV) maxV = v;
     }
   }
   const tSpan = maxT - minT || 1;
-  const padV = (maxV - minV) * PRICE_PADDING_RATIO || 1;
-  const paddedMin = minV - padV;
-  const paddedMax = maxV + padV;
-  const range = paddedMax - paddedMin || 1;
+  const paddedMin = 0;
+  const paddedMax = 100;
+  const range = paddedMax - paddedMin;
   const toX = (t) => P.left + ((t - minT) / tSpan) * chartW;
   const toY = (pct) => P.top + chartH - ((pct - paddedMin) / range) * chartH;
 
