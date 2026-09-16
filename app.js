@@ -6251,7 +6251,10 @@ function bindProgressiveImg(wrap) {
   }
 }
 
-// Cover parallax: the header image lags behind scroll (feed cards + post/lesson modal).
+// Cover parallax: the image lags scroll (stays on screen longer) without zoom.
+// Shift is only downward, and only after the cover's top has left the viewport,
+// so the uncovered strip at the top of the frame is already off-screen.
+const COVER_PARALLAX_LAG = 0.4;
 let parallaxRaf = 0;
 function applyCoverParallax() {
   if (prefersReducedMotion()) return;
@@ -6261,11 +6264,9 @@ function applyCoverParallax() {
   for (let i = 0; i < covers.length; i++) {
     const cover = covers[i];
     const rect = cover.getBoundingClientRect();
-    if (rect.bottom < -80 || rect.top > vh + 80) continue;
-    const progress = (vh - rect.top) / (vh + rect.height || 1);
-    const maxShift = rect.height * 0.12;
-    const shift = (Math.min(1, Math.max(0, progress)) - 0.5) * 2 * maxShift;
-    cover.style.setProperty('--parallax', `${shift.toFixed(1)}px`);
+    if (rect.bottom < 0 || rect.top > vh) continue;
+    const scrolled = Math.max(0, -rect.top);
+    cover.style.setProperty('--parallax', `${(scrolled * COVER_PARALLAX_LAG).toFixed(1)}px`);
   }
 }
 function scheduleCoverParallax() {

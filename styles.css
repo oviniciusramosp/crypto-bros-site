@@ -1490,31 +1490,27 @@ body.modal-open {
   width: 100%;
   aspect-ratio: 14 / 9;
 }
-/* Post header parallax: extra image height so translateY has room to travel. */
+/* Cover parallax: image stays 1:1 with the 14/9 frame (no extra zoom/crop).
+   Scroll lag is translateY only; the top gap stays off-screen because the
+   cover starts at the top of the page. */
 .lazy-img.card__cover .lazy-img__full,
 .lazy-img.modal__cover .lazy-img__full {
-  height: 130%;
-  top: -15%;
-  bottom: auto;
   will-change: transform;
   transform: translate3d(0, var(--parallax, 0px), 0);
 }
 .lazy-img.card__cover .lazy-img__thumb,
 .lazy-img.modal__cover .lazy-img__thumb {
-  height: 130%;
-  top: -15%;
-  bottom: auto;
   will-change: transform;
   transform: translate3d(0, var(--parallax, 0px), 0) scale(1.08);
 }
 @media (prefers-reduced-motion: reduce) {
   .lazy-img.card__cover .lazy-img__full,
   .lazy-img.modal__cover .lazy-img__full {
-    height: 100%; top: 0; will-change: auto; transform: none;
+    will-change: auto; transform: none;
   }
   .lazy-img.card__cover .lazy-img__thumb,
   .lazy-img.modal__cover .lazy-img__thumb {
-    height: 100%; top: 0; will-change: auto; transform: scale(1.08);
+    will-change: auto; transform: scale(1.08);
   }
 }
 /* Content figures: 16/9 placeholder until JS sets the decoded ratio. */
