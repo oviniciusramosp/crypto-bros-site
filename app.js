@@ -2004,6 +2004,17 @@ function buildChartGeometry(sliced, width, height, pad, opts) {
   return { pts, chartW, chartH, paddedMin, paddedMax, P, width, height, emaPaths, hLines, icons, emaValues };
 }
 
+/** Expanding ring behind the live end-dot (app PulseRing). */
+function livePulseRing(x, y, color) {
+  if (prefersReducedMotion()) return '';
+  const cx = x.toFixed(2);
+  const cy = y.toFixed(2);
+  return `<circle cx="${cx}" cy="${cy}" r="4" fill="none" stroke="${color}" stroke-width="1.5" opacity="0.35">` +
+    `<animate attributeName="r" values="4;14" dur="1.5s" repeatCount="indefinite"/>` +
+    `<animate attributeName="opacity" values="0.35;0" dur="1.5s" repeatCount="indefinite"/>` +
+  `</circle>`;
+}
+
 /**
  * Paint a price line chart into `host`.
  * Fill uses accent-tinted dots + vertical fade (app LineChart ImageShader dots).
@@ -2201,7 +2212,8 @@ function paintPriceChart(host, tipEl, opts) {
           emaSvg +
           `<path d="${linePath}" fill="none" stroke="${accent}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>` +
           (liveDot && currentPrice != null
-            ? `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="3.5" fill="${accent}"/>` +
+            ? livePulseRing(last.x, last.y, accent) +
+              `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="3.5" fill="${accent}"/>` +
               `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="2" fill="${innerDot}"/>`
             : `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="3" fill="${accent}"/>`) +
           iconsSvg +
@@ -3300,7 +3312,8 @@ function paintPolyChart(host, tipEl, opts) {
     extraSvg +
     `<path d="${linePath}" fill="none" stroke="${accent}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>` +
     (liveDot
-      ? `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="3.5" fill="${accent}"/>` +
+      ? livePulseRing(last.x, last.y, accent) +
+        `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="3.5" fill="${accent}"/>` +
         `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="2" fill="${dark ? '#000' : '#fff'}"/>`
       : `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="3" fill="${accent}"/>`);
 
