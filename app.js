@@ -6057,8 +6057,14 @@ function paintHighlightBrushes(root) {
     hlObserved.set(root, ro);
   }
   const hostRect = root.getBoundingClientRect();
-  const originX = hostRect.left + (root.clientLeft || 0) - (root.scrollLeft || 0);
-  const originY = hostRect.top + (root.clientTop || 0) - (root.scrollTop || 0);
+  // Hidden host (display:none, e.g. painting before the modal is shown) — nothing to measure.
+  if (!hostRect.width) return;
+  // The modal enter animation scales the panel, so getClientRects() comes back scaled
+  // while the layer draws in unscaled layout px. Undo the scale or every brush drifts
+  // further from its text the lower it sits in the post (reopen from cache paints mid-animation).
+  const scale = root.offsetWidth ? hostRect.width / root.offsetWidth : 1;
+  const originX = hostRect.left + ((root.clientLeft || 0) - (root.scrollLeft || 0)) * scale;
+  const originY = hostRect.top + ((root.clientTop || 0) - (root.scrollTop || 0)) * scale;
   const frag = document.createDocumentFragment();
   spans.forEach((span) => {
     const cs = getComputedStyle(span);
@@ -6067,10 +6073,10 @@ function paintHighlightBrushes(root) {
     const hangL = hlCapHang(span, 'l');
     const hangR = hlCapHang(span, 'r');
     [...span.getClientRects()].filter((r) => r.width > 0.5 && r.height > 0.5).forEach((r) => {
-      const w = Math.max(r.width + hangL + hangR, 8);
+      const w = Math.max(r.width / scale + hangL + hangR, 8);
       const svg = hlMakeBrushSvg(w, bg, pressure);
-      svg.style.left = `${r.left - originX - hangL}px`;
-      svg.style.top = `${r.top - originY + (r.height - HL_BRUSH_H) / 2}px`;
+      svg.style.left = `${(r.left - originX) / scale - hangL}px`;
+      svg.style.top = `${(r.top - originY) / scale + (r.height / scale - HL_BRUSH_H) / 2}px`;
       svg.style.width = `${w}px`;
       svg.style.height = `${HL_BRUSH_H}px`;
       frag.appendChild(svg);
