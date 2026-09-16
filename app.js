@@ -176,8 +176,7 @@ function applyStaticText() {
   $('g-fake-label').textContent = I18N.t('login.google');
   const loginClose = $('login-close');
   if (loginClose) loginClose.setAttribute('aria-label', I18N.t('login.close'));
-  const loginBtn = $('sidebar-login');
-  if (loginBtn) loginBtn.textContent = I18N.t('menu.signIn');
+  applySidebarLoginLabel();
   document.querySelectorAll('#guest-lang button').forEach((b) =>
     b.classList.toggle('active', b.dataset.lang === I18N.lang));
   const sidebar = $('sidebar');
@@ -193,6 +192,17 @@ function applyStaticText() {
   document.querySelectorAll('#login-lang button').forEach((b) =>
     b.classList.toggle('active', b.dataset.lang === I18N.lang));
   renderMenuState();
+}
+
+/** Collapsed rail shows the icon only, so the text lives in a span + tooltip attrs. */
+function applySidebarLoginLabel() {
+  const btn = $('sidebar-login');
+  if (!btn) return;
+  const label = I18N.t('menu.signIn');
+  const span = btn.querySelector('.sidebar__login-label');
+  if (span) span.textContent = label;
+  btn.dataset.label = label;
+  btn.setAttribute('aria-label', label);
 }
 
 /** Fill sidebar nav labels + Ionicons (and cryptobros Feed glyph). */
@@ -358,7 +368,7 @@ function onLangChange(lang) {
 // ── Locale suggestion (Cloudflare edge geo → Apple-style banner) ───────
 const PT_COUNTRIES = new Set(['BR', 'PT', 'AO', 'MZ', 'CV', 'GW', 'ST', 'TL']);
 const LANG_BANNER_KEY = 'cb-lang-banner-dismissed';
-// Session-scoped: dismissing a post-language offer shouldn't silence future shared links.
+// Dismiss is permanent (localStorage); accepting the switch only silences the session.
 const POST_LANG_BANNER_KEY = 'cb-post-lang-banner-dismissed';
 
 // Site-wide locale banner (#lang-banner) is separate from the post alt-language
@@ -450,7 +460,9 @@ function browserPrefersPortuguese() {
 function maybeSuggestPostLanguage(post) {
   hidePostLangBanner();
   if (!post || !post.altId) return;
-  try { if (sessionStorage.getItem(POST_LANG_BANNER_KEY)) return; } catch (e) {}
+  try {
+    if (localStorage.getItem(POST_LANG_BANNER_KEY) || sessionStorage.getItem(POST_LANG_BANNER_KEY)) return;
+  } catch (e) {}
 
   const lang = post.lang || '';
   const wantsPt = browserPrefersPortuguese();
@@ -671,8 +683,7 @@ function syncAuthChrome() {
   const user = $('sidebar-user-wrap');
   if (guest) guest.classList.toggle('hidden', loggedIn);
   if (user) user.classList.toggle('hidden', !loggedIn);
-  const loginBtn = $('sidebar-login');
-  if (loginBtn) loginBtn.textContent = I18N.t('menu.signIn');
+  applySidebarLoginLabel();
   if (loggedIn) renderMenuUser();
   else closeUserPopover();
 }
@@ -9849,18 +9860,18 @@ document.querySelectorAll('#sidebar-nav .sidebar__item').forEach((b) => {
   b.addEventListener('pointerenter', pinTip);
   b.addEventListener('focus', pinTip);
 });
-// Theme cycle tooltip (collapsed rail) — same fixed positioning as nav items.
-const menuThemeCycleBtn = $('menu-theme-cycle');
-if (menuThemeCycleBtn) {
-  const pinThemeTip = () => {
+// Footer tooltips (collapsed rail) — same fixed positioning as the nav items.
+[$('menu-theme-cycle'), $('sidebar-login')].forEach((btn) => {
+  if (!btn) return;
+  const pinTip = () => {
     if (!isDesktopSidebar() || !isSidebarCollapsed()) return;
-    const r = menuThemeCycleBtn.getBoundingClientRect();
-    menuThemeCycleBtn.style.setProperty('--tip-x', `${Math.round(r.right + 12)}px`);
-    menuThemeCycleBtn.style.setProperty('--tip-y', `${Math.round(r.top + r.height / 2)}px`);
+    const r = btn.getBoundingClientRect();
+    btn.style.setProperty('--tip-x', `${Math.round(r.right + 12)}px`);
+    btn.style.setProperty('--tip-y', `${Math.round(r.top + r.height / 2)}px`);
   };
-  menuThemeCycleBtn.addEventListener('pointerenter', pinThemeTip);
-  menuThemeCycleBtn.addEventListener('focus', pinThemeTip);
-}
+  btn.addEventListener('pointerenter', pinTip);
+  btn.addEventListener('focus', pinTip);
+});
 const sidebarToggle = $('sidebar-toggle');
 if (sidebarToggle) {
   sidebarToggle.addEventListener('click', () => {
@@ -9940,7 +9951,7 @@ $('lang-banner-close').addEventListener('click', () => {
 const postLangClose = $('post-lang-banner-close');
 if (postLangClose) {
   postLangClose.addEventListener('click', () => {
-    try { sessionStorage.setItem(POST_LANG_BANNER_KEY, '1'); } catch (e) {}
+    try { localStorage.setItem(POST_LANG_BANNER_KEY, '1'); } catch (e) {}
     hidePostLangBanner();
   });
 }
