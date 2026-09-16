@@ -3258,7 +3258,7 @@ function paintPolyChart(host, tipEl, opts) {
       legendEl.innerHTML = outcomes.map((o) =>
         `<span class="nb-chart__legend-item">` +
           `<span class="nb-chart__legend-line" style="background:${o.color}"></span>` +
-          `<span class="nb-chart__legend-label">${escapeHtml(o.label)}</span></span>`
+          `<span class="nb-chart__legend-label">${escapeHtml(polyUiLabel(o))}</span></span>`
       ).join('');
       legendEl.hidden = false;
     } else {
@@ -3275,7 +3275,7 @@ function paintPolyChart(host, tipEl, opts) {
       if (!hit) return '';
       return `<div class="nb-chart__tip-row">` +
         `<span class="nb-chart__legend-dot" style="background:${o.color}"></span>` +
-        `<span class="mm__tooltip-date">${escapeHtml(o.label)}</span>` +
+        `<span class="mm__tooltip-date">${escapeHtml(polyUiLabel(o))}</span>` +
         `<span class="mm__tooltip-price" style="margin-left:8px">${Math.round(hit.p * 100)}%</span>` +
         `</div>`;
     }).join('');
@@ -3864,6 +3864,16 @@ function extractPolySlug(raw) {
   } catch (e) { return null; }
   if (/^[a-z0-9][a-z0-9-]{1,200}$/i.test(s)) return s.toLowerCase();
   return null;
+}
+
+function polyUiLabel(o) {
+  if (!o) return '';
+  return I18N.lang === 'en' ? (o.label || '') : (o.labelPt || o.label || '');
+}
+function polyUiTitle(data, override) {
+  if (override) return override;
+  if (!data) return '';
+  return I18N.lang === 'en' ? (data.title || '') : (data.titlePt || data.title || '');
 }
 
 function defaultPolyColorName(label, index) {
@@ -4497,14 +4507,14 @@ async function mountInlinePoly(el) {
     const outcomes = applyPolyDisplayColors(rawOutcomes, params.colors);
     const top = outcomes[0];
     const pct = isFinite(top.price) ? Math.round(top.price * 100) : null;
-    const title = escapeHtml(params.title || data.title || slug);
+    const title = escapeHtml(polyUiTitle(data, params.title) || slug);
     const href = data.url ? escapeHtml(data.url) : '';
     const timeLabel = escapeHtml(resolvePrimaryLabel({ timeRange: params.timeRange }, days));
     const titleInner = href
       ? `<a href="${href}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${title}</a>`
       : title;
     const pctHtml = pct != null
-      ? `<div class="nb-chart__pct">${pct}% ${escapeHtml(top.label)}</div>`
+      ? `<div class="nb-chart__pct">${pct}% ${escapeHtml(polyUiLabel(top))}</div>`
       : '';
     const firstT = top.history && top.history[0] && top.history[0].t;
     const sinceDateStr = firstT ? new Date(firstT).toISOString().slice(0, 10) : null;
