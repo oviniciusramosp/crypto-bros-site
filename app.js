@@ -1012,6 +1012,70 @@ const FNG_CLASS_TO_KEY = {
 const SUB_DAILY_INTERVALS = new Set(['15m', '1h', '4h', '12h']);
 const PRICE_PADDING_RATIO = 0.08;
 const OVERLAY_PADDING_RATIO = 0.06; // app chartConstants — room for icons/labels beyond anchors
+const AXIS_Y_GUTTER = 44;
+const AXIS_X_GUTTER = 16;
+
+function generateYTicks(min, max, count) {
+  if (max <= min) return [min];
+  const n = Math.max(2, count || 5);
+  const ticks = [];
+  for (let i = 0; i < n; i++) ticks.push(min + (max - min) * (i / (n - 1)));
+  return ticks;
+}
+
+function formatYAxisValue(value, isRsi) {
+  if (!isFinite(value)) return '';
+  if (isRsi) return String(Math.round(value));
+  if (value >= 100000) return `$${(value / 1000).toFixed(0)}K`;
+  if (value >= 1000) return `$${(value / 1000).toFixed(1)}K`;
+  if (value >= 100) return `$${value.toFixed(0)}`;
+  if (value >= 1) return `$${value.toFixed(2)}`;
+  return `$${value.toFixed(4)}`;
+}
+
+function formatXAxisLabel(ts, days) {
+  const d = new Date(ts);
+  const loc = (I18N.lang || '').toLowerCase().startsWith('pt') ? 'pt-BR' : 'en-US';
+  if (days <= 7) {
+    return d.toLocaleDateString(loc, { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
+  }
+  if (days <= 90) {
+    return d.toLocaleDateString(loc, { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  }
+  return d.toLocaleDateString(loc, { month: 'short', year: '2-digit', timeZone: 'UTC' });
+}
+
+function chartAxisSvg(geom, opts) {
+  const showX = !!opts.showXAxis;
+  const showY = !!opts.showYAxis;
+  if (!showX && !showY) return '';
+  const { paddedMin, paddedMax, P, chartW, chartH, pts } = geom;
+  const range = paddedMax - paddedMin || 1;
+  const rsi = !!opts.rsi;
+  const days = opts.days || 365;
+  const color = isDark() ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)';
+  const grid = isDark() ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  let svg = '';
+  if (showY) {
+    const ticks = generateYTicks(paddedMin, paddedMax, 5);
+    for (const tick of ticks) {
+      const y = P.top + chartH - ((tick - paddedMin) / range) * chartH;
+      svg += `<line x1="${P.left.toFixed(1)}" y1="${y.toFixed(1)}" x2="${(P.left + chartW).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${grid}" stroke-width="1"/>`;
+      svg += `<text x="${(P.left + chartW + 6).toFixed(1)}" y="${y.toFixed(1)}" fill="${color}" font-size="9" font-family="Inter, system-ui, sans-serif" dominant-baseline="middle">${escapeHtml(formatYAxisValue(tick, rsi))}</text>`;
+    }
+  }
+  if (showX && pts && pts.length >= 2) {
+    const count = Math.min(4, pts.length);
+    for (let i = 0; i < count; i++) {
+      if (showY && i === count - 1) continue;
+      const idx = Math.round((pts.length - 1) * (i / (count - 1)));
+      const p = pts[idx];
+      const x = i === 0 ? p.x + 8 : p.x;
+      svg += `<text x="${x.toFixed(1)}" y="${(P.top + chartH + 12).toFixed(1)}" fill="${color}" font-size="9" font-family="Inter, system-ui, sans-serif" text-anchor="${i === 0 ? 'start' : 'middle'}">${escapeHtml(formatXAxisLabel(p.t, days))}</text>`;
+    }
+  }
+  return svg;
+}
 const CHART_CACHE_TTL = 5 * 60 * 1000; // app DEFAULT_CHART_REFETCH_MS
 const CHART_GAP_MAX_DAYS = 365; // CoinGecko free tier max per request
 const CHART_ZOOM_MS = 600; // TIMING.CHART_ZOOM
@@ -1970,6 +2034,18 @@ function buildChartGeometry(sliced, width, height, pad, opts) {
       const labelV = hline.labelV || 'above';
       const labelH = hline.labelH || 'right';
       const labelDist = hline.labelDistance != null ? hline.labelDistance : HLINE_LABEL_DEFAULT_DISTANCE;
+      let labelX;
+      let labelY;
+      if (labelV === 'right') {
+        labelX = xEnd + labelDist;
+        labelY = y;
+      } else if (labelV === 'left') {
+        labelX = xStart - labelDist;
+        labelY = y;
+      } else {
+        labelX = labelH === 'left' ? xStart : xEnd;
+        labelY = labelV === 'below' ? y + labelDist + HLINE_LABEL_FONT_SIZE : y - labelDist;
+      }
       hLines.push({
         xStart, xEnd, y,
         color: hline.color,
@@ -1977,8 +2053,7 @@ function buildChartGeometry(sliced, width, height, pad, opts) {
         strokeWidth: hline.strokeWidth || HLINE_STROKE_WIDTH,
         style: hline.style || 'solid',
         label: hline.label,
-        labelX: labelH === 'left' ? xStart : xEnd,
-        labelY: labelV === 'below' ? y + labelDist + HLINE_LABEL_FONT_SIZE : y - labelDist,
+        labelX, labelY,
         labelH, labelV,
       });
     }
@@ -2041,14 +2116,18 @@ function paintPriceChart(host, tipEl, opts) {
     playEntrance = false, withSlide = false, liveDot = true,
     emaOverlays = null, horizontalLines = null, iconMarkers = null,
     ohlcPoints = null, coinId = null, legendEl = null,
+    showXAxis = false, showYAxis = false,
   } = opts;
   const width = host.clientWidth || host.parentElement?.clientWidth || 360;
   const hasEma = !!(emaOverlays && emaOverlays.length);
+  const rightLabels = (horizontalLines || []).some((l) => l.labelV === 'right');
   // Reserve bottom strip for EMA legend (app EMA_LEGEND_RESERVED_HEIGHT)
   const basePad = pad || CHART_PAD;
-  const P = hasEma
-    ? { ...basePad, bottom: basePad.bottom + EMA_LEGEND_RESERVED_HEIGHT }
-    : basePad;
+  const P = {
+    ...basePad,
+    bottom: basePad.bottom + (hasEma ? EMA_LEGEND_RESERVED_HEIGHT : 0) + (showXAxis ? AXIS_X_GUTTER : 0),
+    right: (showYAxis || rightLabels) ? AXIS_Y_GUTTER : basePad.right,
+  };
 
   // Slice visible window; keep full series for EMA warm-up when present
   const sliced = sliceChartPoints(points, days, currentPrice);
@@ -2094,6 +2173,9 @@ function paintPriceChart(host, tipEl, opts) {
     emaValues, horizontalLines: horizontalLines || [], iconMarkers: iconMarkers || [],
   });
   const { pts, chartH, emaPaths, hLines, icons } = geom;
+  const axisSvg = chartAxisSvg(geom, {
+    showXAxis, showYAxis, rsi: false, days,
+  });
   const linePath = monotoneCubicPath(pts);
   const last = pts[pts.length - 1];
   const fillPath = linePath +
@@ -2121,12 +2203,16 @@ function paintPriceChart(host, tipEl, opts) {
       (dash ? ` stroke-dasharray="${dash}"` : '') +
       ` stroke-linecap="round"/>`;
     if (h.label) {
-      const anchor = h.labelH === 'left' ? 'start' : 'end';
+      const anchor = h.labelV === 'right' ? 'start'
+        : h.labelV === 'left' ? 'end'
+        : (h.labelH === 'left' ? 'start' : 'end');
+      const baseline = (h.labelV === 'left' || h.labelV === 'right') ? 'middle'
+        : (h.labelV === 'below' ? 'hanging' : 'auto');
       hLinesSvg +=
         `<text x="${h.labelX.toFixed(2)}" y="${h.labelY.toFixed(2)}"` +
         ` fill="${h.color}" fill-opacity="${Math.min(1, h.opacity + 0.2)}"` +
         ` font-size="${HLINE_LABEL_FONT_SIZE}" font-family="Inter, system-ui, sans-serif"` +
-        ` text-anchor="${anchor}" dominant-baseline="${h.labelV === 'below' ? 'hanging' : 'auto'}">` +
+        ` text-anchor="${anchor}" dominant-baseline="${baseline}">` +
         `${escapeHtml(h.label)}</text>`;
     }
   }
@@ -2218,6 +2304,7 @@ function paintPriceChart(host, tipEl, opts) {
             `<rect x="0" y="0" width="${width}" height="${height}" fill="url(#${dotsId})"/>` +
           `</g>` +
           // Horizontal lines behind price line (app order)
+          axisSvg +
           hLinesSvg +
           // EMA overlays behind price line
           emaSvg +
@@ -2578,6 +2665,17 @@ function getFngForTimestamp(history, ts) {
 
 // ── Shared overlay SVG helpers (hline + icons on arbitrary Y scale) ────
 
+function hlineLabelLayout(xStart, xEnd, y, labelV, labelH, dist) {
+  if (labelV === 'right') return { x: xEnd + dist, y, anchor: 'start', baseline: 'middle' };
+  if (labelV === 'left') return { x: xStart - dist, y, anchor: 'end', baseline: 'middle' };
+  return {
+    x: labelH === 'left' ? xStart : xEnd,
+    y: labelV === 'below' ? y + dist + HLINE_LABEL_FONT_SIZE : y - dist,
+    anchor: labelH === 'left' ? 'start' : 'end',
+    baseline: labelV === 'below' ? 'hanging' : 'auto',
+  };
+}
+
 function renderHLinesSvg(hLines) {
   let svg = '';
   for (const h of hLines) {
@@ -2589,12 +2687,12 @@ function renderHLinesSvg(hLines) {
       (dash ? ` stroke-dasharray="${dash}"` : '') +
       ` stroke-linecap="round"/>`;
     if (h.label) {
-      const anchor = h.labelH === 'left' ? 'start' : 'end';
+      const layout = hlineLabelLayout(h.xStart, h.xEnd, h.y, h.labelV, h.labelH, 0);
       svg +=
         `<text x="${h.labelX.toFixed(2)}" y="${h.labelY.toFixed(2)}"` +
         ` fill="${h.color}" fill-opacity="${Math.min(1, h.opacity + 0.2)}"` +
         ` font-size="${HLINE_LABEL_FONT_SIZE}" font-family="Inter, system-ui, sans-serif"` +
-        ` text-anchor="${anchor}" dominant-baseline="${h.labelV === 'below' ? 'hanging' : 'auto'}">` +
+        ` text-anchor="${layout.anchor}" dominant-baseline="${layout.baseline}">` +
         `${escapeHtml(h.label)}</text>`;
     }
   }
@@ -2620,14 +2718,15 @@ function buildHLineSegments(horizontalLines, chartDataTs, priceToY, P, chartW) {
     const labelV = hline.labelV || 'above';
     const labelH = hline.labelH || 'right';
     const labelDist = hline.labelDistance != null ? hline.labelDistance : HLINE_LABEL_DEFAULT_DISTANCE;
+    const laid = hlineLabelLayout(xStart, xEnd, y, labelV, labelH, labelDist);
     hLines.push({
       xStart, xEnd, y,
       color: hline.color, opacity: hline.opacity,
       strokeWidth: hline.strokeWidth || HLINE_STROKE_WIDTH,
       style: hline.style || 'solid',
       label: hline.label,
-      labelX: labelH === 'left' ? xStart : xEnd,
-      labelY: labelV === 'below' ? y + labelDist + HLINE_LABEL_FONT_SIZE : y - labelDist,
+      labelX: laid.x,
+      labelY: laid.y,
       labelH, labelV,
     });
   }
@@ -3724,7 +3823,7 @@ function parseHorizontalLines(lineStr) {
     const strokeW = fields[7] ? parseFloat(fields[7]) : undefined;
     const strokeWidth = strokeW && !isNaN(strokeW) && strokeW > 0 ? strokeW : undefined;
     const labelVRaw = (fields[8] || '').toLowerCase();
-    const labelV = labelVRaw === 'above' || labelVRaw === 'below' ? labelVRaw : undefined;
+    const labelV = ['above', 'below', 'left', 'right'].includes(labelVRaw) ? labelVRaw : undefined;
     const labelHRaw = (fields[9] || '').toLowerCase();
     const labelH = labelHRaw === 'left' || labelHRaw === 'right' ? labelHRaw : undefined;
     const labelDist = fields[10] ? parseFloat(fields[10]) : undefined;
@@ -3815,6 +3914,14 @@ function parseChartFromKV(asset, kv) {
   if (kv.cycle) {
     const ranges = parseCycleRanges(kv.cycle);
     if (ranges) out.cycleRanges = ranges;
+  }
+  const axesTok = String(kv.axes || '').toLowerCase();
+  if (axesTok === '1' || axesTok === 'true' || axesTok === 'xy' || axesTok === 'yx') {
+    out.showXAxis = true;
+    out.showYAxis = true;
+  } else if (axesTok) {
+    out.showXAxis = axesTok.includes('x');
+    out.showYAxis = axesTok.includes('y');
   }
   return out;
 }
@@ -4147,6 +4254,8 @@ function paintInlineChart(el, opts) {
       ohlcPoints: st.ohlcPoints,
       coinId: st.coinId,
       legendEl: legend,
+      showXAxis: st.showXAxis,
+      showYAxis: st.showYAxis,
     });
   }
 }
@@ -4411,6 +4520,8 @@ async function mountInlineChart(el) {
       days, currentPrice, accent, height, live, coinId, uid,
       emaOverlays, horizontalLines, iconMarkers, ohlcPoints,
       fngLevels: params.fngLevels || DEFAULT_FNG_LEVELS,
+      showXAxis: !!params.showXAxis,
+      showYAxis: !!params.showYAxis,
       scrub: null, geom: null,
     };
 
