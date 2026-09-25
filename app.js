@@ -6020,10 +6020,13 @@ function richTextItemInner(t) {
   }
 
   const a = t.annotations || {};
+  const pageMention = t.type === 'mention' && t.mention && t.mention.type === 'page' && t.mention.page
+    ? t.mention.page.id
+    : '';
   const href = t.href || (t.text && t.text.link && t.text.link.url);
   const rawPlain = t.plain_text || '';
   const plain = a.code ? rawPlain : stripWriterMarkup(rawPlain);
-  let html = (a.code || href) ? escapeHtml(plain) : applyGlossaryToPlainText(plain);
+  let html = (a.code || href || pageMention) ? escapeHtml(plain) : applyGlossaryToPlainText(plain);
   if (a.code) html = `<code>${html}</code>`;
   if (a.bold) html = `<strong>${html}</strong>`;
   if (a.italic) html = `<em>${html}</em>`;
@@ -6032,13 +6035,13 @@ function richTextItemInner(t) {
   if (a.color && a.color !== 'default' && !a.color.endsWith('_background') && NOTION_COLORS[a.color]) {
     html = `<span style="color:${notionHex(a.color)}">${html}</span>`;
   }
-  if (href) {
-    const internal = internalCalcRoute(href);
-    if (internal) {
-      html = `<a href="${escapeHtml(href)}" data-calc-link="${internal}">${html}</a>`;
-    } else {
-      html = `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${html}</a>`;
-    }
+  const internal = pageMention
+    ? { kind: 'page', id: normalizeNotionId(pageMention) }
+    : parseInternalHref(href);
+  if (internal) {
+    html = `<a href="${escapeHtml(href || '/' + (internal.id || ''))}" data-internal-nav="${internalNavAttr(internal)}">${html}</a>`;
+  } else if (href) {
+    html = `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${html}</a>`;
   }
   const highlight = (a.color && a.color.endsWith('_background') && !a.code)
     ? a.color.replace('_background', '')
@@ -6046,9 +6049,41 @@ function richTextItemInner(t) {
   return { html, highlight };
 }
 
+const MARKDOWN_LINK_RE = /\[([^\]]+)\]\(([^)]+)\)/g;
+
+function expandMarkdownLinks(item) {
+  const text = (item && (item.plain_text || (item.text && item.text.content))) || '';
+  if (!item || item.href || item.type === 'mention' || !text) return [item];
+  const matches = [...text.matchAll(MARKDOWN_LINK_RE)];
+  if (!matches.length) return [item];
+  const out = [];
+  let last = 0;
+  for (const match of matches) {
+    const start = match.index;
+    if (start > last) {
+      const before = text.slice(last, start);
+      out.push({ ...item, plain_text: before, href: null, text: { ...(item.text || {}), content: before, link: null } });
+    }
+    const linkText = match[1];
+    const linkUrl = match[2];
+    out.push({
+      ...item,
+      plain_text: linkText,
+      href: linkUrl,
+      text: { ...(item.text || {}), content: linkText, link: { url: linkUrl } },
+    });
+    last = start + match[0].length;
+  }
+  if (last < text.length) {
+    const after = text.slice(last);
+    out.push({ ...item, plain_text: after, href: null, text: { ...(item.text || {}), content: after, link: null } });
+  }
+  return out;
+}
+
 function richText(arr) {
   if (!Array.isArray(arr)) return '';
-  const parts = arr.map(richTextItemInner);
+  const parts = arr.flatMap(expandMarkdownLinks).map(richTextItemInner);
   let out = '';
   let i = 0;
   while (i < parts.length) {
@@ -6217,23 +6252,86 @@ function hydrateHighlightBrushes(root) {
   requestAnimationFrame(run);
 }
 
-/** App InternalLinkContext routes: /dca-sim, /pos-calc (optionally absolute). */
-function internalCalcRoute(href) {
+/** App InternalLinkContext routes — path-only `/pos-calc` or absolute same-site. */
+const INTERNAL_VIEW_ROUTES = {
+  '/': 'feed',
+  '/feed': 'feed',
+  '/estudos': 'lessons',
+  '/glossario': 'glossary',
+  '/glossary': 'glossary',
+  '/dca-sim': 'dca',
+  '/pos-calc': 'pos',
+};
+const APP_ONLY_ROUTES = { '/rsi-dca': 1, '/trade': 1, '/mais': 1 };
+const NOTION_UUID_PATH_RE = /^\/([0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12})\/?$/i;
+
+function normalizeNotionId(id) {
+  const clean = String(id || '').replace(/-/g, '').toLowerCase();
+  if (clean.length !== 32 || /[^0-9a-f]/.test(clean)) return '';
+  return `${clean.slice(0, 8)}-${clean.slice(8, 12)}-${clean.slice(12, 16)}-${clean.slice(16, 20)}-${clean.slice(20)}`;
+}
+function idsEqual(a, b) {
+  return String(a || '').replace(/-/g, '').toLowerCase() === String(b || '').replace(/-/g, '').toLowerCase();
+}
+function extractNotionPageId(url) {
+  if (!url) return '';
+  const s = String(url);
+  const dashed = s.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi);
+  const hex32 = s.match(/[0-9a-f]{32}/gi);
+  const raw = dashed && dashed.length ? dashed[dashed.length - 1] : (hex32 && hex32.length ? hex32[hex32.length - 1] : '');
+  return normalizeNotionId(raw);
+}
+function parseInternalHref(href) {
   if (!href) return null;
   try {
     let path = href;
+    let search = '';
     if (/^https?:\/\//i.test(href)) {
       const u = new URL(href);
-      // Only treat same-site or path-only style app routes.
-      if (u.hostname && u.hostname !== 'crypto-bros.com' && u.hostname !== location.hostname) return null;
+      if (u.hostname && /notion\.so$/i.test(u.hostname)) {
+        const id = extractNotionPageId(href);
+        return id ? { kind: 'page', id } : null;
+      }
+      const host = (u.hostname || '').replace(/^www\./i, '');
+      if (host && host !== 'crypto-bros.com' && u.hostname !== location.hostname) return null;
       path = u.pathname || '';
+      search = u.search || '';
+    } else if (href.startsWith('/') && !href.startsWith('//')) {
+      const cut = href.split('#')[0];
+      const q = cut.indexOf('?');
+      path = q >= 0 ? cut.slice(0, q) : cut;
+      search = q >= 0 ? cut.slice(q) : '';
+    } else {
+      return null;
     }
     path = path.replace(/\/+$/, '') || '/';
     const lower = path.toLowerCase();
-    if (lower === '/dca-sim' || lower.endsWith('/dca-sim')) return 'dca';
-    if (lower === '/pos-calc' || lower.endsWith('/pos-calc')) return 'pos';
+    const uuidMatch = path.match(NOTION_UUID_PATH_RE);
+    if (uuidMatch) return { kind: 'page', id: normalizeNotionId(uuidMatch[1]) };
+    const share = path.match(/^\/p\/([0-9a-f-]{32,36})$/i);
+    if (share) {
+      const id = normalizeNotionId(share[1]);
+      return id ? { kind: 'page', id } : null;
+    }
+    if (search) {
+      const q = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+      const fromQuery = q.get('post') || q.get('lesson');
+      if (fromQuery) {
+        const id = normalizeNotionId(fromQuery) || extractNotionPageId(fromQuery);
+        if (id) return { kind: 'page', id };
+      }
+    }
+    if (INTERNAL_VIEW_ROUTES[lower]) return { kind: 'view', view: INTERNAL_VIEW_ROUTES[lower] };
+    if (APP_ONLY_ROUTES[lower]) return { kind: 'app', route: lower };
   } catch (e) {}
   return null;
+}
+function internalNavAttr(internal) {
+  if (!internal) return '';
+  if (internal.kind === 'view') return `view:${internal.view}`;
+  if (internal.kind === 'page') return `page:${internal.id}`;
+  if (internal.kind === 'app') return `app:${internal.route}`;
+  return '';
 }
 function blockText(b) { const d = b[b.type]; return d ? richText(d.rich_text) : ''; }
 function imgUrl(d) { return d ? (d.external ? d.external.url : d.file ? d.file.url : null) : null; }
@@ -9748,10 +9846,63 @@ function closeAnyCalculator() {
   return false;
 }
 
-function handleCalcLinkClick(e) {
-  const a = e.target.closest && e.target.closest('a[data-calc-link]');
+function findCachedPostId(id) {
+  if (postCache[id]) return id;
+  const key = Object.keys(postCache).find((k) => idsEqual(k, id));
+  if (key) return key;
+  const hit = (typeof feedPosts !== 'undefined' ? feedPosts : []).find((p) => idsEqual(p.id, id));
+  return hit ? hit.id : null;
+}
+function findCachedLessonId(id) {
+  if (lessonCache[id]) return id;
+  const key = Object.keys(lessonCache).find((k) => idsEqual(k, id));
+  if (key) return key;
+  for (const mod of lessonModules) {
+    const hit = (mod.lessons || []).find((l) => idsEqual(l.id, id));
+    if (hit) return hit.id;
+  }
+  return null;
+}
+async function openInternalPage(id) {
+  const nid = normalizeNotionId(id) || id;
+  const postId = findCachedPostId(nid);
+  if (postId) return openPost(postId);
+  const lessonId = findCachedLessonId(nid);
+  if (lessonId) return openLesson(lessonId);
+  try {
+    const res = await publicFetch(`/web/post?id=${encodeURIComponent(nid)}`);
+    if (res.ok) {
+      const post = await res.json();
+      const pid = post.id || nid;
+      postCache[pid] = post;
+      return openPost(pid);
+    }
+  } catch (e) {}
+  return openLesson(nid);
+}
+
+function handleInternalNavClick(e) {
+  const a = e.target.closest && e.target.closest('a[data-internal-nav], a[data-calc-link]');
   if (!a) return;
   e.preventDefault();
+  e.stopPropagation();
+  const spec = a.getAttribute('data-internal-nav') || '';
+  if (spec.startsWith('view:')) {
+    const view = spec.slice(5);
+    if (view === 'dca') openDcaCalculator();
+    else if (view === 'pos') openPosCalculator();
+    else setView(view);
+    return;
+  }
+  if (spec.startsWith('page:')) {
+    openInternalPage(spec.slice(5));
+    return;
+  }
+  if (spec.startsWith('app:')) {
+    toast(I18N.t('link.appOnly'));
+    return;
+  }
+  // Legacy data-calc-link="dca"|"pos"
   const which = a.getAttribute('data-calc-link');
   if (which === 'dca') openDcaCalculator();
   else if (which === 'pos') openPosCalculator();
@@ -9858,9 +10009,9 @@ const calcSheetClose = $('calc-sheet-close');
 const calcSheetBackdrop = $('calc-sheet-backdrop');
 if (calcSheetClose) calcSheetClose.addEventListener('click', closeCalcSheet);
 if (calcSheetBackdrop) calcSheetBackdrop.addEventListener('click', closeCalcSheet);
-// Internal Notion links → /dca-sim /pos-calc
-$('modal-content').addEventListener('click', handleCalcLinkClick);
-$('lesson-panel-content').addEventListener('click', handleCalcLinkClick);
+// Internal Notion links (/pos-calc, /uuid, page mentions) — capture so feed
+// card clicks don't also open the post that contains the link.
+document.addEventListener('click', handleInternalNavClick, true);
 $('ios-banner-close').addEventListener('click', () => {
   $('ios-banner').classList.add('hidden');
   localStorage.setItem('cb-banner-dismissed', '1');
