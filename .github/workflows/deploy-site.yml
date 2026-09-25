@@ -6,8 +6,8 @@ on:
     branches: [main]
   workflow_dispatch:
   # Regenerates the per-post share pages so newly published posts get link previews.
-  # ponytail: dumb cron. Event-driven (Worker pings workflow_dispatch on a new post) would
-  # avoid the idle rebuilds — do that if the Actions noise starts to matter.
+  # The Worker also dispatches this workflow on a new post (GITHUB_SHARE_TOKEN). The cron
+  # stays as the backstop: GitHub routinely delays scheduled jobs by hours on free repos.
   schedule:
     - cron: '*/30 * * * *'
 

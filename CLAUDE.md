@@ -57,7 +57,8 @@ Os tokens são **espelhados à mão** de `crypto-bros-app/src/theme/*`. **O app 
 | `app.js`                 | Lógica: login, feed, filtros, modal, renderer de blocos |
 | `i18n.js`                | Strings PT/EN + toggle + datas relativas                |
 | `sw.js`                  | Service worker (cache/offline)                          |
-| `scripts/`               | Geração das páginas `/p/<id>` (rich link previews)      |
+| `scripts/`               | Geração das páginas `/p/<id>` (OG + capa + JSON-LD)     |
+| `robots.txt`             | Permite crawlers e aponta o sitemap                     |
 | `CNAME`                  | crypto-bros.com                                         |
 | `.nojekyll`              | Desliga o Jekyll no Pages                               |
 
@@ -74,6 +75,9 @@ O Feed é público (Worker `/web/feed` + `/web/post`). Em localhost, `dev-config
 - **Google login exige origem HTTPS.** Em `http://` dá `origin_mismatch` — por isso o preview local tem bypass.
 - **Assets são cacheados agressivamente pelo Pages.** Ao mudar `styles.css`/`app.js`, bumpar o `?v=N` no `index.html`.
 - **Share URL precisa de trailing slash** em `/p/<id>/` — sem ele o Pages responde 301 e o crawler de preview perde o OG.
+- **Nunca usar `<meta http-equiv="refresh">` nas páginas `/p/<id>`.** Facebook/WhatsApp tratam delay 0 como redirect e raspam a homepage (OG genérico, `og.png`). Humanos entram no app via `location.replace` em JS; crawlers de preview não executam JS.
+- **og:image tem que ser same-origin.** A capa é baixada no deploy para `/p/<id>/cover.{png,jpg,…}`. URL do Worker (`/web/cover?id=`) com query string falha no unfurl do WhatsApp/iMessage.
+- Páginas `/p/<id>` (e `sitemap.xml`) são geradas em `scripts/gen-share.mjs` no workflow do Pages — `p/` é gitignored. Post recém-publicado só ganha preview depois desse job.
 
 ---
 

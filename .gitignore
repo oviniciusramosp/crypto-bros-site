@@ -1,3 +1,4 @@
 p/
+sitemap.xml
 # Local-only dev secret for real API content without Google login (never commit).
 dev-config.js
