@@ -43,7 +43,7 @@ const STRINGS = {
     // Biblioteca — indicações de livros com links de afiliado
     'library.title': 'Biblioteca',
     'library.subtitle': 'Os livros que eu indico para entender dinheiro, mercado e Bitcoin.',
-    'library.disclosure': 'Os links de compra são de afiliado: você paga o mesmo preço e o Crypto Bros ganha uma comissão.',
+    'library.disclosure': 'Os links de compra são de afiliado: você paga o mesmo preço e ajuda o Crypto Bros a continuar crescendo.',
     'library.buy.amazon': 'Amazon',
     'library.buy.ml': 'Mercado Livre',
     'library.buyAria': 'Comprar {title} na {store}',
@@ -245,7 +245,7 @@ const STRINGS = {
     'view.library': 'Library',
     'library.title': 'Library',
     'library.subtitle': 'The books I recommend for making sense of money, markets and Bitcoin.',
-    'library.disclosure': 'Buy links are affiliate links: you pay the same price and Crypto Bros earns a commission.',
+    'library.disclosure': 'Buy links are affiliate links: you pay the same price and help Crypto Bros keep growing.',
     'library.buy.amazon': 'Amazon',
     'library.buy.ml': 'Mercado Livre',
     'library.buyAria': 'Buy {title} on {store}',
