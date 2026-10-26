@@ -3153,6 +3153,183 @@ body.modal-open {
   border-radius: 10px;
 }
 
+/* ── Biblioteca (book picks + affiliate buy links) ─────────────────────
+   Same page chrome as .glossary / .calc-page. Cards are horizontal because the
+   column is 640px: a cover grid at this width gives thumbnails too small to read.
+   The two buy buttons carry equal visual weight on purpose — neither store is the
+   recommended one, so neither gets the accent. */
+.library {
+  position: relative;
+  min-height: calc(100dvh - var(--topbar-h) - var(--lang-banner-h));
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+.library__scroll {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: var(--page-pad-top) var(--pad-screen) max(40px, env(safe-area-inset-bottom, 0px));
+}
+.library__title-block { padding: 0 0 4px; }
+.library__title {
+  margin: 0;
+  font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: -0.4px; color: var(--text);
+}
+.library__subtitle {
+  margin: var(--page-title-gap) 0 0;
+  font-size: 15px; line-height: 20px; color: var(--text-tertiary);
+}
+/* Affiliate disclosure — required in plain sight, not buried in a footer. */
+.library__disclosure {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--bookmark-bg);
+  border: 1px solid var(--inner-border);
+  font-size: 12px; line-height: 17px; color: var(--text-tertiary);
+}
+.library__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: 20px 0 24px;
+}
+
+.book-card {
+  position: relative;
+  display: flex;
+  /* flex-start, not the default stretch: stretch overrides the cover's aspect-ratio
+     and the cover grows with the blurb, squashing the artwork. */
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  background: var(--surface);
+  border-radius: var(--radius-card);
+}
+.book-card::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  border: 1px solid var(--inner-border); border-radius: inherit;
+}
+.book-card__cover {
+  position: relative;
+  flex: 0 0 96px;
+  width: 96px;
+  aspect-ratio: 2 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  box-shadow: var(--shadow-sm);
+}
+/* The spine sits underneath and the cover image on top, so a dead <img> (Amazon
+   rotates its image paths) falls back to readable type instead of a grey hole. */
+.book-card__spine {
+  --spine-hue: 20;
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 10px 8px;
+  box-sizing: border-box;
+  background: linear-gradient(160deg,
+    hsl(var(--spine-hue) 45% 34%) 0%,
+    hsl(var(--spine-hue) 48% 17%) 100%);
+  font-size: 13px; line-height: 17px; font-weight: 700; letter-spacing: -0.2px;
+  color: #FFFFFF;
+  text-align: center;
+  text-wrap: balance;
+  overflow: hidden;
+}
+.book-card__img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+
+.book-card__body { flex: 1; min-width: 0; }
+.book-card__tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.book-card__tag {
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  padding: 1px 8px; border-radius: var(--radius-pill);
+  background: var(--seg-track); color: var(--text-secondary);
+  border: 1px solid var(--inner-border);
+}
+.book-card__title {
+  margin: 0;
+  font-size: 17px; line-height: 22px; font-weight: 700; letter-spacing: -0.2px; color: var(--text);
+}
+.book-card__subtitle {
+  margin: 2px 0 0;
+  font-size: 13px; line-height: 18px; color: var(--text-secondary);
+}
+.book-card__meta {
+  margin: 6px 0 0;
+  font-size: 12px; line-height: 16px; color: var(--text-tertiary);
+}
+.book-card__blurb {
+  margin: 10px 0 0;
+  font-size: 14px; line-height: 20px; color: var(--text-secondary);
+}
+.book-card__buy { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-top: 14px; }
+.book-buy {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 34px; padding: 0 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-highlight);
+  border: 1px solid var(--actions-border);
+  color: var(--text);
+  font-size: 13px; font-weight: 600; text-decoration: none;
+  white-space: nowrap; /* "Mercado Livre" must never wrap inside a 34px pill */
+  transition: background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.book-buy:hover {
+  background: color-mix(in srgb, var(--surface-highlight) 85%, var(--text) 15%);
+  border-color: var(--text-tertiary);
+}
+.book-buy:active { transform: scale(0.97); }
+.book-buy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.book-buy__arrow { width: 13px; height: 13px; color: var(--text-tertiary); }
+.book-buy:hover .book-buy__arrow { color: var(--text); }
+
+.library-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; padding: 60px 40px 40px; text-align: center;
+  color: var(--text-tertiary);
+}
+.library-empty svg { opacity: 0.6; }
+.library-empty p { margin: 0; font-size: 15px; line-height: 22px; }
+.library-empty__hint { font-size: 13px; color: var(--text-tertiary); }
+.library-empty__retry {
+  margin-top: 4px; height: 36px; padding: 0 16px;
+  border-radius: var(--radius-pill);
+  background: var(--seg-active); color: var(--seg-active-text);
+  border: none; font-family: var(--font); font-size: 14px; font-weight: 600; cursor: pointer;
+}
+
+.book-skel {
+  display: flex; gap: var(--space-md); padding: var(--space-md);
+  background: var(--surface); border: 1px solid var(--inner-border);
+  border-radius: var(--radius-card);
+}
+.book-skel__cover {
+  flex: 0 0 96px; width: 96px; aspect-ratio: 2 / 3; border-radius: 8px;
+  background: var(--skeleton); animation: pulse 1.4s ease-in-out infinite;
+}
+.book-skel__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+.book-skel__line {
+  height: 12px; border-radius: 6px; background: var(--skeleton);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.book-skel__line--title { height: 18px; width: 70%; }
+.book-skel__line--meta { width: 45%; }
+.book-skel__line--short { width: 60%; }
+
+/* Phone: the cover shrinks so the blurb keeps a readable measure. The buy row keeps
+   content-sized buttons and simply wraps — two stores do not fit side by side at 375px. */
+@media (max-width: 480px) {
+  .book-card__cover, .book-skel__cover { flex-basis: 76px; width: 76px; }
+  .book-card__buy { gap: 6px; }
+  .book-buy { height: 36px; }
+}
+
 /* ── Glossary page (app GlossarySlide) ─────────────────────────────────
    Content width follows .feed (max-width: 640px), same chrome as .calc-page.
    --glossary-alpha-pad: title stack + search + breathing so the fixed A–Z rail

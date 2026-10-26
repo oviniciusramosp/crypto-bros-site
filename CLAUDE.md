@@ -57,7 +57,9 @@ Os tokens são **espelhados à mão** de `crypto-bros-app/src/theme/*`. **O app 
 | `app.js`                 | Lógica: login, feed, filtros, modal, renderer de blocos |
 | `i18n.js`                | Strings PT/EN + toggle + datas relativas                |
 | `sw.js`                  | Service worker (cache/offline)                          |
-| `scripts/`               | Geração das páginas `/p/<id>` (OG + capa + JSON-LD)     |
+| `data/books.json`        | Biblioteca: livros indicados + tag de afiliado da Amazon |
+| `scripts/books.mjs`      | CLI da Biblioteca (`add` / `check` / `tag`)             |
+| `scripts/gen-share.mjs`  | Geração das páginas `/p/<id>` (OG + capa + JSON-LD)     |
 | `robots.txt`             | Permite crawlers e aponta o sitemap                     |
 | `CNAME`                  | crypto-bros.com                                         |
 | `.nojekyll`              | Desliga o Jekyll no Pages                               |
@@ -69,6 +71,35 @@ python3 -m http.server 5173   # → http://localhost:5173
 ```
 
 O Feed é público (Worker `/web/feed` + `/web/post`). Em localhost, `dev-config.js` ainda pode trocar um secret por sessão via `/auth/dev` para abrir Estudos/glossário/simuladores. Sem sessão, essas views abrem o overlay de login.
+
+## Biblioteca (`?view=library`)
+
+View **pública** (como o Feed), com dados estáticos em `data/books.json` — não passa pelo Worker.
+
+```bash
+node scripts/books.mjs tag <sua-tag-20>              # uma vez: tag de afiliado da Amazon
+node scripts/books.mjs add <url-amazon> --ml <link>  # adiciona um livro
+node scripts/books.mjs check                         # confere ASIN, link do ML, capa, sinopse
+```
+
+- **Amazon é derivada, não armazenada.** O link é montado em `amazonAffiliateUrl()` a partir do
+  ASIN + `affiliate.amazonTag`. Trocar a tag é editar **um** campo, nunca os livros um a um.
+- **Mercado Livre é colado por livro.** Não existe API pública de afiliados do ML; o painel
+  (afiliados.mercadolivre.com.br → Ferramentas → Gerador de link) devolve links curtos opacos.
+  Sem `links.ml.url`, o botão simplesmente não aparece.
+  Hosts aceitos: `meli.la`, `mercadolivre.com/sec/…`, `mercadolivre.com.br/social/…`. Um
+  `meli.la/<code>` resolve para `/social/<user>?matt_word=<user>&matt_tool=<id>&ref=<blob>` —
+  o produto vive nesse `ref` opaco, que não dá para montar na mão. É por isso que o link é
+  colado e não derivado. `links.ml.productId` é só o ID do painel (não é endereçável por URL).
+- **Não existe API de produto em jogo.** A PA-API 5.0 da Amazon foi aposentada em 2026; a
+  sucessora (Creators API) exige 10 vendas qualificadas em 30 dias + OAuth. E credencial
+  nenhuma caberia aqui: o repo é público e o site não tem backend próprio.
+- **Status HTTP da Amazon não valida ASIN** — um ASIN inexistente responde 200 com outro
+  produto. Quem valida é o `<meta name="title">` da página, que é o que o `check` compara.
+- Links de compra levam `rel="sponsored nofollow noopener noreferrer"` e a página mostra o
+  aviso de afiliado em `library.disclosure`. Não remover nenhum dos dois.
+- Capa: `cover` aceita caminho local (`./assets/books/<id>.jpg`) ou URL remota. Quando falha
+  ou está vazia, o card cai na lombada tipográfica — não precisa de placeholder.
 
 ## Gotchas
 

@@ -210,6 +210,7 @@ function applySidebarLabels() {
   const items = [
     { id: 'sidebar-feed', label: I18N.t('view.feed'), iconHtml: FEED_ICON },
     { id: 'sidebar-lessons', label: I18N.t('view.lessons'), iconHtml: LESSONS_ICON },
+    { id: 'sidebar-library', label: I18N.t('view.library'), iconHtml: LIBRARY_ICON },
     { id: 'sidebar-glossary', label: I18N.t('menu.glossary.title'), iconHtml: GLOSSARY_ICON },
     { id: 'sidebar-dca', label: I18N.t('menu.dca.title'), iconHtml: DCA_ICON },
     { id: 'sidebar-pos', label: I18N.t('menu.pos.title'), iconHtml: POS_ICON },
@@ -362,6 +363,7 @@ function onLangChange(lang) {
   if (currentView === 'lessons' && isLoggedIn()) loadLessons();
   else if (currentView === 'glossary' && isLoggedIn()) loadGlossaryPage();
   else if (currentView === 'dca' || currentView === 'pos') { /* already reloaded above */ }
+  else if (currentView === 'library') renderLibraryPage(); // blurbs are per-language
   else loadFeed();
 }
 
@@ -5356,6 +5358,12 @@ const GLOSSARY_ICON =
   '<svg class="fb fb--book" viewBox="0 0 24 24" aria-hidden="true">' +
   '<path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M6 2a2 2 0 0 0-2 2v15a3 3 0 0 0 3 3h12a1 1 0 1 0 0-2h-2v-2h2a1 1 0 0 0 1-1V4a2 2 0 0 0-2-2h-8v16h5v2H7a1 1 0 1 1 0-2h1V2H6Z"/>' +
   '</svg>';
+// Ionicons library (solid) — stacked books, distinct from the single book of Glossário.
+const LIBRARY_ICON =
+  '<svg class="ion ion--library" viewBox="0 0 512 512" aria-hidden="true">' +
+  '<path fill="currentColor" d="M96 480h320a32 32 0 0032-32V160H64v288a32 32 0 0032 32zm64-256a16 16 0 0116-16h32a16 16 0 0116 16v192a16 16 0 01-16 16h-32a16 16 0 01-16-16zm96 0a16 16 0 0116-16h32a16 16 0 0116 16v192a16 16 0 01-16 16h-32a16 16 0 01-16-16zm96 0a16 16 0 0116-16h32a16 16 0 0116 16v192a16 16 0 01-16 16h-32a16 16 0 01-16-16z"/>' +
+  '<path fill="currentColor" d="M48 32h416a16 16 0 0116 16v48a16 16 0 01-16 16H48a16 16 0 01-16-16V48a16 16 0 0116-16z"/>' +
+  '</svg>';
 // Ionicons trending-up (outline path — Ionicons has no separate solid for this glyph).
 const DCA_ICON =
   '<svg class="ion ion--trending" viewBox="0 0 512 512" aria-hidden="true">' +
@@ -7794,8 +7802,8 @@ async function toggleLessonComplete() {
   }
 }
 
-// ── View switching (Feed | Estudos | Glossário | DCA | Pos) ───────────
-const ALL_VIEWS = ['feed', 'lessons', 'glossary', 'dca', 'pos'];
+// ── View switching (Feed | Estudos | Biblioteca | Glossário | DCA | Pos) ─
+const ALL_VIEWS = ['feed', 'lessons', 'library', 'glossary', 'dca', 'pos'];
 const VIEW_FADE_MS = 160;
 /** View currently painted (may lag `currentView` mid-transition). */
 let displayedView = 'feed';
@@ -7803,6 +7811,7 @@ let viewFadeToken = 0;
 
 function viewUrl(view) {
   if (view === 'lessons') return '?view=lessons';
+  if (view === 'library') return '?view=library';
   if (view === 'glossary') return '?view=glossary';
   if (view === 'dca') return '?view=dca';
   if (view === 'pos') return '?view=pos';
@@ -7897,6 +7906,7 @@ function setView(view, fromPop) {
   closeSidebarDrawer(); // phone/tablet: close overlay after a nav choice
   if (!fromPop) history.pushState({ view }, '', viewUrl(view));
   if (view === 'lessons' && !lessonModules.length) loadLessons();
+  if (view === 'library') loadLibraryPage();
   if (view === 'glossary') loadGlossaryPage();
   if (view === 'dca') loadDcaPage();
   if (view === 'pos') loadPosPage();
@@ -7944,6 +7954,7 @@ function syncFromUrl() {
 
   let view = 'feed';
   if (lesson || viewParam === 'lessons') view = 'lessons';
+  else if (viewParam === 'library') view = 'library';
   else if (viewParam === 'glossary') view = 'glossary';
   else if (viewParam === 'dca') view = 'dca';
   else if (viewParam === 'pos') view = 'pos';
@@ -7952,6 +7963,170 @@ function syncFromUrl() {
   if (post) { openPost(post, true); return; }
   if (lesson) { openLesson(lesson, true); return; }
   closeModal(true);
+}
+
+// ── Biblioteca (book picks + affiliate buy links) ─────────────────────
+// Static data: data/books.json is same-origin, so it needs no Worker route and the
+// service worker caches it like any other asset. Affiliate links are built here at
+// render time instead of being stored per book — the Amazon tag lives in ONE place,
+// so changing it never means hand-editing every entry.
+//
+// Amazon: appending ?tag=<id> to /dp/<ASIN> is the whole mechanism, which is why the
+// link is derived. Mercado Livre publishes no affiliate API and its panel hands out
+// opaque /sec/ short links, so those are pasted per book (scripts/books.mjs add --ml).
+let libraryData = null;
+let libraryError = false;
+let libraryLoading = false;
+
+const LIBRARY_LINK_REL = 'sponsored nofollow noopener noreferrer';
+
+function amazonAffiliateUrl(book) {
+  const asin = book && book.links && book.links.amazon && book.links.amazon.asin;
+  if (!asin) return '';
+  const aff = (libraryData && libraryData.affiliate) || {};
+  const domain = aff.amazonDomain || 'www.amazon.com.br';
+  const tag = (aff.amazonTag || '').trim();
+  const base = `https://${domain}/dp/${encodeURIComponent(asin)}`;
+  return tag ? `${base}?tag=${encodeURIComponent(tag)}` : base;
+}
+
+function mlAffiliateUrl(book) {
+  const url = book && book.links && book.links.ml && book.links.ml.url;
+  return typeof url === 'string' && url.trim() ? url.trim() : '';
+}
+
+/**
+ * The typographic spine is ALWAYS painted, with the cover image layered on top. A book
+ * with no cover and a book whose cover URL dies (Amazon rotates its image paths) then
+ * land in the same place: the <img> removes itself on error and the spine is already
+ * there. Hue is derived from the id so a card looks deliberate, not broken.
+ */
+function bookCoverHtml(book) {
+  const title = book.title || '';
+  let hue = 0;
+  for (let i = 0; i < book.id.length; i++) hue = (hue * 31 + book.id.charCodeAt(i)) % 360;
+  const spine = `<span class="book-card__spine" style="--spine-hue:${hue}">${escapeHtml(title)}</span>`;
+  if (!book.cover) return spine;
+  return (
+    spine +
+    `<img class="book-card__img" src="${escapeHtml(book.cover)}" alt="${escapeHtml(title)}" ` +
+    `loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()" />`
+  );
+}
+
+function bookBuyHtml(book, store, href) {
+  if (!href) return '';
+  const label = I18N.t(`library.buy.${store}`);
+  const aria = I18N.t('library.buyAria', { title: book.title || '', store: label });
+  return (
+    `<a class="book-buy book-buy--${store}" href="${escapeHtml(href)}" target="_blank" ` +
+    `rel="${LIBRARY_LINK_REL}" aria-label="${escapeHtml(aria)}">` +
+      `<span class="book-buy__label">${escapeHtml(label)}</span>` +
+      `<svg class="book-buy__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7"/><path d="M8 7h9v9"/></svg>` +
+    `</a>`
+  );
+}
+
+function bookCardHtml(book) {
+  const meta = [book.author, book.year].filter(Boolean).join(' · ');
+  const blurb = (book.blurb && (book.blurb[I18N.lang] || book.blurb.pt)) || '';
+  const tags = (book.tags || [])
+    .map((t) => `<span class="book-card__tag">${escapeHtml(t)}</span>`)
+    .join('');
+  const buys = bookBuyHtml(book, 'amazon', amazonAffiliateUrl(book)) +
+    bookBuyHtml(book, 'ml', mlAffiliateUrl(book));
+
+  return (
+    `<article class="book-card" id="book-${escapeHtml(book.id)}">` +
+      `<div class="book-card__cover">${bookCoverHtml(book)}</div>` +
+      `<div class="book-card__body">` +
+        (tags ? `<div class="book-card__tags">${tags}</div>` : '') +
+        `<h2 class="book-card__title">${escapeHtml(book.title || '')}</h2>` +
+        (book.subtitle ? `<p class="book-card__subtitle">${escapeHtml(book.subtitle)}</p>` : '') +
+        (meta ? `<p class="book-card__meta">${escapeHtml(meta)}</p>` : '') +
+        (blurb ? `<p class="book-card__blurb">${escapeHtml(blurb)}</p>` : '') +
+        (buys ? `<div class="book-card__buy">${buys}</div>` : '') +
+      `</div>` +
+    `</article>`
+  );
+}
+
+function librarySkeletonHtml() {
+  return Array.from({ length: 3 })
+    .map(
+      () =>
+        `<div class="book-skel">` +
+          `<div class="book-skel__cover"></div>` +
+          `<div class="book-skel__body">` +
+            `<div class="book-skel__line book-skel__line--title"></div>` +
+            `<div class="book-skel__line book-skel__line--meta"></div>` +
+            `<div class="book-skel__line"></div>` +
+            `<div class="book-skel__line book-skel__line--short"></div>` +
+          `</div>` +
+        `</div>`,
+    )
+    .join('');
+}
+
+function renderLibraryPage() {
+  const list = $('library-list');
+  if (!list) return;
+
+  const titleEl = $('library-title');
+  const subtitleEl = $('library-subtitle');
+  const disclosureEl = $('library-disclosure');
+  if (titleEl) titleEl.textContent = I18N.t('library.title');
+  if (subtitleEl) subtitleEl.textContent = I18N.t('library.subtitle');
+  if (disclosureEl) disclosureEl.textContent = I18N.t('library.disclosure');
+
+  if (libraryLoading && !libraryData) {
+    list.innerHTML = librarySkeletonHtml();
+    return;
+  }
+
+  if (libraryError) {
+    list.innerHTML =
+      `<div class="library-empty">` +
+        `<p>${escapeHtml(I18N.t('library.error'))}</p>` +
+        `<button type="button" class="library-empty__retry" id="library-retry">${escapeHtml(I18N.t('library.retry'))}</button>` +
+      `</div>`;
+    const retry = $('library-retry');
+    if (retry) retry.addEventListener('click', () => { libraryError = false; loadLibraryPage(); });
+    return;
+  }
+
+  const books = (libraryData && libraryData.books) || [];
+  if (!books.length) {
+    list.innerHTML =
+      `<div class="library-empty">` +
+        `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>` +
+        `<p>${escapeHtml(I18N.t('library.empty'))}</p>` +
+        `<p class="library-empty__hint">${escapeHtml(I18N.t('library.emptyHint'))}</p>` +
+      `</div>`;
+    return;
+  }
+
+  list.innerHTML = books.map(bookCardHtml).join('');
+}
+
+async function loadLibraryPage() {
+  renderLibraryPage(); // paint the static chrome first (title/subtitle/disclosure)
+  if (libraryData || libraryLoading) return;
+
+  libraryLoading = true;
+  libraryError = false;
+  renderLibraryPage();
+  try {
+    const res = await fetch('./data/books.json', { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`books.json ${res.status}`);
+    const json = await res.json();
+    libraryData = json && Array.isArray(json.books) ? json : { affiliate: {}, books: [] };
+  } catch (e) {
+    libraryError = true;
+  } finally {
+    libraryLoading = false;
+    renderLibraryPage();
+  }
 }
 
 // ── Glossary page (app GlossarySlide) ─────────────────────────────────

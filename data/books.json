@@ -1,0 +1,33 @@
+{
+  "affiliate": {
+    "amazonTag": "viniciusram0d-20",
+    "amazonDomain": "www.amazon.com.br"
+  },
+  "books": [
+    {
+      "id": "o-trader-vencedor",
+      "title": "O trader vencedor",
+      "subtitle": "Como operar em flow e dominar o mercado com confiança",
+      "author": "Mark Douglas",
+      "year": null,
+      "cover": "https://m.media-amazon.com/images/I/71AFAYw-4kL._SL1500_.jpg",
+      "tags": [
+        "Trade",
+        "Psicologia"
+      ],
+      "blurb": {
+        "pt": "Psicologia de trade: por que a disciplina, e não a análise, separa quem ganha de quem quebra.",
+        "en": "Trading psychology: why discipline, not analysis, separates who wins from who blows up."
+      },
+      "links": {
+        "amazon": {
+          "asin": "8582851502"
+        },
+        "ml": {
+          "url": "https://meli.la/2hKeDVG",
+          "productId": "BEZ01I-VUV9"
+        }
+      }
+    }
+  ]
+}

@@ -33,6 +33,25 @@ self.addEventListener('fetch', (e) => {
     );
     return;
   }
+  // Library picks ship as plain data, with no ?v= bump to invalidate them the way
+  // app.js/styles.css get one. Stale-while-revalidate would hide a newly added book
+  // until the second visit, so this one file is network-first with a cache fallback.
+  if (url.pathname.endsWith('/data/books.json')) {
+    e.respondWith((async () => {
+      try {
+        const res = await fetch(req.url, { cache: 'no-cache' });
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy));
+        }
+        return res;
+      } catch (err) {
+        return (await caches.match(req)) || fetch(req);
+      }
+    })());
+    return;
+  }
+
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const cached = await cache.match(req);
