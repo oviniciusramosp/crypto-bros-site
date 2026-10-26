@@ -5358,11 +5358,23 @@ const GLOSSARY_ICON =
   '<svg class="fb fb--book" viewBox="0 0 24 24" aria-hidden="true">' +
   '<path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M6 2a2 2 0 0 0-2 2v15a3 3 0 0 0 3 3h12a1 1 0 1 0 0-2h-2v-2h2a1 1 0 0 0 1-1V4a2 2 0 0 0-2-2h-8v16h5v2H7a1 1 0 1 1 0-2h1V2H6Z"/>' +
   '</svg>';
-// Ionicons library (solid) — stacked books, distinct from the single book of Glossário.
+// Biblioteca: three books standing at different heights, spine band punched out with
+// evenodd. Drawn here because neither set the site already uses has a stack of books —
+// Ionicons `library` is a shelf/building, and the app's Flowbite set only ships the
+// single `book` that Glossário already owns. Solid, to sit with the other nav glyphs.
 const LIBRARY_ICON =
-  '<svg class="ion ion--library" viewBox="0 0 512 512" aria-hidden="true">' +
-  '<path fill="currentColor" d="M96 480h320a32 32 0 0032-32V160H64v288a32 32 0 0032 32zm64-256a16 16 0 0116-16h32a16 16 0 0116 16v192a16 16 0 01-16 16h-32a16 16 0 01-16-16zm96 0a16 16 0 0116-16h32a16 16 0 0116 16v192a16 16 0 01-16 16h-32a16 16 0 01-16-16zm96 0a16 16 0 0116-16h32a16 16 0 0116 16v192a16 16 0 01-16 16h-32a16 16 0 01-16-16z"/>' +
-  '<path fill="currentColor" d="M48 32h416a16 16 0 0116 16v48a16 16 0 01-16 16H48a16 16 0 01-16-16V48a16 16 0 0116-16z"/>' +
+  '<svg class="cb-icon cb-icon--books" viewBox="0 0 24 24" aria-hidden="true">' +
+  // Books lying flat, stacked. Upright spines kept reading as a bar chart at 20px —
+  // even standing on a shelf bar. Flat slabs cannot: the uneven widths and the
+  // alternating page notch break the even rhythm that would say "hamburger menu".
+  '<path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="' +
+    'M4.4 4.4H19.4A1.2 1.2 0 0 1 20.6 5.6V7.8A1.2 1.2 0 0 1 19.4 9H4.4A1.2 1.2 0 0 1 3.2 7.8V5.6A1.2 1.2 0 0 1 4.4 4.4Z' +
+    'M17.3 5.2H18.2V8.2H17.3Z' +
+    'M5.6 9.7H18.4A1.2 1.2 0 0 1 19.6 10.9V13.1A1.2 1.2 0 0 1 18.4 14.3H5.6A1.2 1.2 0 0 1 4.4 13.1V10.9A1.2 1.2 0 0 1 5.6 9.7Z' +
+    'M6 10.5H6.9V13.5H6Z' +
+    'M3.8 15H20.2A1.2 1.2 0 0 1 21.4 16.2V18.4A1.2 1.2 0 0 1 20.2 19.6H3.8A1.2 1.2 0 0 1 2.6 18.4V16.2A1.2 1.2 0 0 1 3.8 15Z' +
+    'M17.9 15.8H18.8V18.8H17.9Z' +
+  '"/>' +
   '</svg>';
 // Ionicons trending-up (outline path — Ionicons has no separate solid for this glyph).
 const DCA_ICON =

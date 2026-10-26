@@ -549,6 +549,7 @@ body.modal-open {
 .sidebar__icon svg { width: 20px; height: 20px; display: block; }
 .sidebar__icon .cbi { font-size: 18px; line-height: 1; }
 .sidebar__icon .ion,
+.sidebar__icon .cb-icon,
 .sidebar__icon .fb { width: 20px; height: 20px; display: block; }
 /* Label stays in the layout; parent overflow clips it as the rail narrows/widens. */
 .sidebar__label {
@@ -3180,20 +3181,23 @@ body.modal-open {
   margin: var(--page-title-gap) 0 0;
   font-size: 15px; line-height: 20px; color: var(--text-tertiary);
 }
-/* Affiliate disclosure — required in plain sight, not buried in a footer. */
-.library__disclosure {
-  margin: 12px 0 0;
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: var(--bookmark-bg);
-  border: 1px solid var(--inner-border);
-  font-size: 12px; line-height: 17px; color: var(--text-tertiary);
-}
 .library__list {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  padding: 20px 0 24px;
+  padding: 20px 0 0;
+}
+/* Affiliate disclosure — closes the list rather than gating it, but still in plain
+   sight (not a footer link). Reads as a note, so it is quieter than a card. */
+.library__disclosure {
+  margin: var(--space-md) 0 24px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--bookmark-bg);
+  border: 1px solid var(--inner-border);
+  font-size: 12px; line-height: 17px; color: var(--text-tertiary);
+  text-align: center;
+  text-wrap: pretty;
 }
 
 .book-card {
